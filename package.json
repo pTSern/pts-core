@@ -6,9 +6,8 @@
     "author": "pTSern",
     "editor": ">=3.8.8",
     "description": "Core dependency extension providing shared plugins and scripts/utils.",
-    "main": "./dist/main.js",
+    "main": "./bootstrap.js",
     "scripts": {
-        "preinstall": "node ./scripts/preinstall.js",
         "build": "tsc",
         "watch": "tsc -w"
     },
