@@ -41,6 +41,7 @@ export const GROUPS = {
     HELPER: { name: "Helper", id: "0" },
     OPTION: { name: "Option", id: "0", displayOrder: 2000 },
     CONFIG: { name: "Config", id: "0" },
+    DETAIL: { name: "Detail", id: "0" },
     
     get: (name: string, id: string = "0") => ({ name, id })
 };
