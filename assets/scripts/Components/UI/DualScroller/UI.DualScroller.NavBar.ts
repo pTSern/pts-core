@@ -1,14 +1,20 @@
 
-import { _decorator, Component, math, Node, tween, UIOpacity, v3, Vec3 } from 'cc';
+import { _decorator, math, Node, tween, UIOpacity, v3, Vec3 } from 'cc';
 import { pConst } from '../../../utils';
 import { editor_property } from '../../../utils/pClass';
 import { UI_DualScroller_NavIcons } from './UI.DualScroller.NavIcons';
+import { Event_Driver } from '../../Event/Event.Driver';
 
 const { ccclass, property } = _decorator;
 const _symbol = Symbol('_function')
 
+type _Type = {
+    onIconClicked(page: number): void
+
+}
+
 @ccclass('UI_DualScroller_NavBar')
-export class UI_DualScroller_NavBar extends Component {
+export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
     @property({ type: UI_DualScroller_NavIcons, group: pConst.GROUPS.CORE })
     icon: UI_DualScroller_NavIcons = null
 
@@ -23,8 +29,6 @@ export class UI_DualScroller_NavBar extends Component {
 
     @property({ group: pConst.GROUPS.CORE })
     numActiveOffsetY: number = 10;
-
-    onIconClicked: pFlex.TFunc<[number], void> = null;
 
     @editor_property()
     protected _numCurrentPage: number = 0
@@ -58,7 +62,7 @@ export class UI_DualScroller_NavBar extends Component {
         this.icon.actForEach( (_, i) => {
             if(!_) return;
 
-            _[_symbol] = () =>  this.onIconClicked?.(i);
+            _[_symbol] = () => this.emit('onIconClicked', i);
             _.on(Node.EventType.TOUCH_END, _[_symbol], this);
         } )
     }

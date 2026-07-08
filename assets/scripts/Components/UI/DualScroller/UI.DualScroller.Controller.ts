@@ -1,5 +1,5 @@
 
-import { _decorator, Component, EventTouch, Node, tween, Tween, view } from 'cc';
+import { _decorator, Component, EventTouch, math, Node, tween, Tween, view } from 'cc';
 import { UI_DualScroller_NavBar } from './UI.DualScroller.NavBar';
 import { pConst } from '../../../utils';
 import { UI_DualScroller_NavIndicator } from './UI.DualScroller.NavIndicator';
@@ -7,9 +7,10 @@ import { editor_property } from '../../../utils/pClass';
 import { UI_DualScroller_Page } from './UI.DualScroller.Page';
 import { Type_EasingSelector } from '../../Type/Type.Easing';
 
-const { ccclass, property } = _decorator;
+const { ccclass, property, disallowMultiple } = _decorator;
 
 @ccclass('UI_DualScroller_Controller')
+@disallowMultiple()
 export class UI_DualScroller_Controller extends Component {
     @property({ type: Node })
     protected _container: Node = null
@@ -41,6 +42,9 @@ export class UI_DualScroller_Controller extends Component {
     @property({ type: Type_EasingSelector, group: pConst.GROUPS.CORE })
     easing: Type_EasingSelector = new Type_EasingSelector();
 
+    @property({ group: pConst.GROUPS.OPTION })
+    isCenterPageAtStart: boolean = true;
+
     @editor_property([UI_DualScroller_Page])
     protected _pages: UI_DualScroller_Page[] = []
 
@@ -71,7 +75,22 @@ export class UI_DualScroller_Controller extends Component {
         this._numPageWidth = this._getPageWidth();
         this._actCollectingPages();
         this.bind(true);
-        this._actSnapTo(0, 0);
+
+        const _start = this.isCenterPageAtStart ? Math.floor(this._pages.length / 2) : 0
+        this._actSnapTo(_start, 0);
+        this.bar?.actUpdateIcons(_start);
+    }
+
+    protected _actScrollTo(page: number, duration?: number) {
+        console.log("SCROLL TO", page, duration)
+        if (this._pages.length === 0) return;
+        duration = duration ?? this.numSnapDuration;
+
+        const _length = this._pages.length;
+        const _target = math.clamp(page, 0, _length - 1);
+
+        const _offset = _target * this._numPageWidth;
+        this._actSnapTo(_offset, duration);
     }
 
     protected onDestroy(): void {
@@ -85,6 +104,8 @@ export class UI_DualScroller_Controller extends Component {
         this.node[_method](Node.EventType.TOUCH_MOVE, this._onTouchMove, this);
         this.node[_method](Node.EventType.TOUCH_END, this._onTouchEnd, this);
         this.node[_method](Node.EventType.TOUCH_CANCEL, this._onTouchEnd, this);
+
+        this.bar?.[_method]('onIconClicked', { func: this._actScrollTo, binder: this })
     }
 
     protected _onTouchStart(event: EventTouch) {
@@ -95,7 +116,6 @@ export class UI_DualScroller_Controller extends Component {
         this._numTouchStartOffset = this._intCurrentOffset;
         this._numTouchStartTime = Date.now();
         this._isDragging = true;
-        console.log("[UI_DualScroller_Controller].{ _onTouchStart }")
     }
 
     protected _onTouchMove(event: EventTouch) {
@@ -107,7 +127,6 @@ export class UI_DualScroller_Controller extends Component {
         const _offset = this._numTouchStartOffset - _dtX;
 
         this._actApplyOffset(_offset);
-        console.log("[UI_DualScroller_Controller].{ _onTouchMove }")
     }
 
     protected _onTouchEnd(event: EventTouch) {
@@ -133,7 +152,6 @@ export class UI_DualScroller_Controller extends Component {
         const _offset = _target * this._numPageWidth;
 
         this._actSnapTo(_offset, this.numSnapDuration);
-        console.log("[UI_DualScroller_Controller].{ _onTouchEnd }")
     }
 
     protected _actSnapTo(offset: number, duration: number) {
