@@ -1,4 +1,5 @@
 
+import { js } from "cc";
 import { EDITOR, EDITOR_NOT_IN_PREVIEW, DEV } from "cc/env";
 
 /**
@@ -10,12 +11,27 @@ export const IS_TEST = DEV;
 export const IS_EDITOR = EDITOR;
 export const LOG_LEVEL = 0;
 
+const __pool__ = js.createMap(true);
+
 // Constants
 export const VOID_FUNC = () => void 0;
+
+export function getNumFunc(num: number) {
+    num = typeof num == 'number' ? num : 0
+    let _func = __pool__[num]
+    if(!_func) {
+        _func = () => num;
+        __pool__[num] = _func;
+    }
+
+    return _func
+}
+
 export const LOG_LEVELS = ['log', 'warn', 'error'] as const;
 export const EDITOR_ONLY_IN_PREVIEW = EDITOR && !EDITOR_NOT_IN_PREVIEW;
 export const RESOLVER = Promise.resolve()
 export const THROWER = (me: string) => { throw new Error(`${me} does not being initialized. Please double check`) }
+export const EDITOR_VISIBLE_IN_PREVIEW = () => EDITOR_ONLY_IN_PREVIEW
 
 export const KEYS = {
     POOL: {

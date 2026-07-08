@@ -102,19 +102,25 @@ export function wait<T>(constructor: pFlex.TCtor<any, T>): Promise<T> {
     return data.resolved ? Promise.resolve(instance(constructor)) : data.promise;
 }
 
-export function editor_ccclass(name: string, mode: 'EDITOR_NOT_IN_PREVIEW' | "EDITOR" | "EDITOR_ONLY_IN_PREVIEW" = 'EDITOR_ONLY_IN_PREVIEW') {
-    let should = false;
-    if (mode === 'EDITOR_NOT_IN_PREVIEW') should = (EDITOR && EDITOR_NOT_IN_PREVIEW);
-    else if (mode === 'EDITOR') should = EDITOR;
-    else if (mode === 'EDITOR_ONLY_IN_PREVIEW') should = pConst.EDITOR_ONLY_IN_PREVIEW;
+type _TMode = 'EDITOR_NOT_IN_PREVIEW' | "EDITOR" | "EDITOR_ONLY_IN_PREVIEW" | "RUNTIME"
+export function editor_ccclass(name: string, mode: _TMode = "EDITOR_ONLY_IN_PREVIEW") {
+    const should = _$hould(mode)
     return (target: any) => should ? _decorator.ccclass(name)(target) : void 0;
 }
 
-export function editor_property(type?: any, opt?: { name?: string, multiline?: boolean, override?: boolean, kill?: boolean, writable?: boolean }, mode: 'EDITOR_NOT_IN_PREVIEW' | "EDITOR" | "EDITOR_ONLY_IN_PREVIEW" = 'EDITOR_ONLY_IN_PREVIEW') {
+function _$hould(mode: _TMode) {
     let should = false;
+
     if (mode === 'EDITOR_NOT_IN_PREVIEW') should = (EDITOR && EDITOR_NOT_IN_PREVIEW);
     else if (mode === 'EDITOR') should = EDITOR;
     else if (mode === 'EDITOR_ONLY_IN_PREVIEW') should = pConst.EDITOR_ONLY_IN_PREVIEW;
+    else if (mode === 'RUNTIME') should = (!EDITOR) || (pConst.EDITOR_ONLY_IN_PREVIEW)
+
+    return should
+}
+
+export function editor_property(type?: any, opt?: { name?: string, multiline?: boolean, override?: boolean, kill?: boolean, writable?: boolean }, mode: _TMode = 'EDITOR_ONLY_IN_PREVIEW') {
+    const should = _$hould(mode);
 
     return (target: any, key: string, descriptor?: PropertyDescriptor) => {
         if (!EDITOR) { if (opt?.kill && descriptor?.get) descriptor.get = () => null; return; }
