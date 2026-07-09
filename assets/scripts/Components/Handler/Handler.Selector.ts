@@ -37,6 +37,11 @@ export class Handler_Selector extends Editor_Smart_SelfFocus {
         this._getCompRef();
     }
 
+    getZidOrUuid(target: Node | Component) {
+        if(!target) return null
+        return target.zid || target.uuid
+    }
+
     @property({})
     protected _handler: string = ''
     @property({ type: Enum({}), visible() { return !!this._target } })
@@ -58,8 +63,12 @@ export class Handler_Selector extends Editor_Smart_SelfFocus {
         }
 
         if(_list.length > 1) {
-            this._ref = _list.find(_ => _.zid == this._zid);
-            const _zids = _list.map( _ => ( { name: _.zid, value: _.zid } ));
+            this._ref = _list.find(_ => this.getZidOrUuid(_) == this._zid);
+            const _zids = _list.map( _ => {
+                const _zid = this.getZidOrUuid(_);
+                return { name: _zid, value: _zid } 
+            });
+
             CCClass.Attr.setClassAttr(this, 'zid', 'enumList', _zids);
             CCClass.Attr.setClassAttr(this, 'zid', 'visible', true);
         } else {
