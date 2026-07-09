@@ -45,17 +45,17 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
     }
 
     protected _actCachingBasePos() {
-        const _total = this.icon.length;
-        const _width = ( _total - 1 ) * this.spacing;
-        const _sX = -_width / 2;
+        //const _total = this.icon.length;
+        //const _width = ( _total - 1 ) * this.spacing;
+        //const _sX = -_width / 2;
 
-        this._iconBasePos = []
+        //this._iconBasePos = []
 
-        for(let i = 0; i < _total; i++) {
-            const _pos = v3(_sX + i * this.spacing, 0, 0);
-            this._iconBasePos.push(_pos);
-            this.icon.at(i)?.setPosition(_pos);
-        }
+        //for(let i = 0; i < _total; i++) {
+        //    const _pos = v3(_sX + i * this.spacing, 0, 0);
+        //    this._iconBasePos.push(_pos);
+        //    this.icon.at(i)?.setPosition(_pos);
+        //}
     }
 
     protected _actBindClickEvents() {
@@ -89,11 +89,11 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
             const _scale = this.numInactiveScale + ( this.numActiveScale - this.numInactiveScale ) * _temp;
             _.setScale(_scale, _scale, 1);
 
-            const _pos = this._iconBasePos[i];
-            if(_pos) {
-                const _yo = this.numActiveOffsetY * _temp;
-                _.setPosition(_pos.x, _pos.y + _yo, _pos.z);
-            }
+            //const _pos = this._iconBasePos[i];
+            //if(_pos) {
+            //    const _yo = this.numActiveOffsetY * _temp;
+            //    _.setPosition(_pos.x, _pos.y + _yo, _pos.z);
+            //}
 
             const _opx = _.getComponent(UIOpacity);
             _opx && ( _opx.opacity = math.lerp(120, 255, _temp) );
