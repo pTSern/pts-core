@@ -1,16 +1,15 @@
 
-import { _decorator, math, Node, tween, UIOpacity, v3, Vec3 } from 'cc';
+import { _decorator, Node, tween, EventTouch } from 'cc';
 import { pConst } from '../../../utils';
 import { editor_property } from '../../../utils/pClass';
 import { UI_DualScroller_NavIcons } from './UI.DualScroller.NavIcons';
 import { Event_Driver } from '../../Event/Event.Driver';
+import { UI_DualScroller_NavIcon } from './UI.DualScroller.NavIcon';
 
 const { ccclass, property } = _decorator;
-const _symbol = Symbol('_function')
 
 type _Type = {
     onIconClicked(page: number): void
-
 }
 
 @ccclass('UI_DualScroller_NavBar')
@@ -32,38 +31,22 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
 
     @editor_property()
     protected _numCurrentPage: number = 0
-    @editor_property([Vec3])
-    protected _iconBasePos: Vec3[] = []
 
-    protected onLoad(): void {
-        this._actCachingBasePos();
+    protected onEnable(): void {
         this._actBindClickEvents();
     }
 
-    protected onDestroy(): void {
+    protected onDisable(): void {
         this._actUnBindClickEvents();
-    }
-
-    protected _actCachingBasePos() {
-        //const _total = this.icon.length;
-        //const _width = ( _total - 1 ) * this.spacing;
-        //const _sX = -_width / 2;
-
-        //this._iconBasePos = []
-
-        //for(let i = 0; i < _total; i++) {
-        //    const _pos = v3(_sX + i * this.spacing, 0, 0);
-        //    this._iconBasePos.push(_pos);
-        //    this.icon.at(i)?.setPosition(_pos);
-        //}
     }
 
     protected _actBindClickEvents() {
         this.icon.actForEach( (_, i) => {
             if(!_) return;
 
-            _[_symbol] = () => this.emit('onIconClicked', i);
-            _.on(Node.EventType.TOUCH_END, _[_symbol], this);
+            (_ as any).index = i;
+            _.node.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
+            _.node.on(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
         } )
     }
 
@@ -72,32 +55,27 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
             this.icon.actForEach( _ => {
                 if(!_) return;
 
-                _[_symbol] && _.off(Node.EventType.TOUCH_END, _[_symbol], this);
+                _.node.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
             })
         } catch(e) {}
+    }
+
+    private _onIconTouchEnd(event: EventTouch) {
+        const _icon = event.currentTarget.getComponent(UI_DualScroller_NavIcon);
+        if (_icon) {
+            const _index = (_icon as any).index;
+            if (typeof _index === 'number') {
+                this.emit('onIconClicked', _index);
+            }
+        }
     }
 
     public actUpdateIcons(current: number) {
         this._numCurrentPage = current;
 
-        this.icon.actForEach( (_, i) => {
-            if(!_) return;
-
-            const _distance = Math.abs(current - i);
-            const _temp = math.clamp01(1 - _distance);
-
-            const _scale = this.numInactiveScale + ( this.numActiveScale - this.numInactiveScale ) * _temp;
-            _.setScale(_scale, _scale, 1);
-
-            //const _pos = this._iconBasePos[i];
-            //if(_pos) {
-            //    const _yo = this.numActiveOffsetY * _temp;
-            //    _.setPosition(_pos.x, _pos.y + _yo, _pos.z);
-            //}
-
-            const _opx = _.getComponent(UIOpacity);
-            _opx && ( _opx.opacity = math.lerp(120, 255, _temp) );
-        } )
+        this.icon.actForEach( (_, i) => 
+            _.toggle?.( i === current )
+         )
     }
 
     actSnapTo(index: number, duration: number = 0.3) {

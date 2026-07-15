@@ -1,5 +1,5 @@
 
-import { _decorator, Component, EventTouch, math, Node, tween, Tween, view } from 'cc';
+import { _decorator, Component, EventTouch, math, Node, tween, Tween, view, UITransform, CCInteger, CCClass } from 'cc';
 import { UI_DualScroller_NavBar } from './UI.DualScroller.NavBar';
 import { pConst } from '../../../utils';
 import { UI_DualScroller_NavIndicator } from './UI.DualScroller.NavIndicator';
@@ -19,6 +19,11 @@ export class UI_DualScroller_Controller extends Component {
     set container(x) {
         if(x && x == this.node) return;
         this._container = x;
+        this.onFocusInEditor();
+    }
+
+    onFocusInEditor(): void {
+        CCClass.Attr.setClassAttr(this, 'intStartPage', 'max', this._container ? this._container.children.length - 1 : 1);
     }
 
     @property({ min: 0, group: pConst.GROUPS.CORE })
@@ -42,8 +47,8 @@ export class UI_DualScroller_Controller extends Component {
     @property({ type: Type_EasingSelector, group: pConst.GROUPS.CORE })
     easing: Type_EasingSelector = new Type_EasingSelector();
 
-    @property({ group: pConst.GROUPS.OPTION })
-    isCenterPageAtStart: boolean = true;
+    @property({ group: pConst.GROUPS.OPTION, type: CCInteger, min: 0, max: 100, step: 1, slide: true })
+    intStartPage: number = 0;
 
     @editor_property([UI_DualScroller_Page])
     protected _pages: UI_DualScroller_Page[] = []
@@ -72,19 +77,21 @@ export class UI_DualScroller_Controller extends Component {
     protected _tween: Tween = null
 
     protected onLoad(): void {
-        this._numPageWidth = this._getPageWidth();
         this._actCollectingPages();
+        this._numPageWidth = this._getPageWidth();
         this.bind(true);
+    }
 
-        const _start = this.isCenterPageAtStart ? Math.floor(this._pages.length / 2) : 0
-        this._actSnapTo(_start, 0);
-        this.bar?.actUpdateIcons(_start);
+    protected start(): void {
+        this._actScrollTo(this.intStartPage);
     }
 
     protected _actScrollTo(page: number, duration?: number) {
-        console.log("SCROLL TO", page, duration)
+        console.log("_actScrollTo", page)
         if (this._pages.length === 0) return;
         duration = duration ?? this.numSnapDuration;
+
+        this._numPageWidth = this._getPageWidth();
 
         const _length = this._pages.length;
         const _target = math.clamp(page, 0, _length - 1);
@@ -111,6 +118,8 @@ export class UI_DualScroller_Controller extends Component {
     protected _onTouchStart(event: EventTouch) {
         this._actStopSnapping();
         const _loc = event.getUILocation();
+
+        this._numPageWidth = this._getPageWidth();
 
         this._numTouchStartX = _loc.x;
         this._numTouchStartOffset = this._intCurrentOffset;
@@ -157,17 +166,19 @@ export class UI_DualScroller_Controller extends Component {
     protected _actSnapTo(offset: number, duration: number) {
         this._actStopSnapping();
 
-        const _obj = { offset: this._intCurrentOffset }
+        const _obj = { offset: this._intCurrentOffset };
+        this._actApplyOffset(offset);
         this._tween = tween(_obj)
             .to(duration, { offset }, { easing: this.easing.get as pFlex.TFunc<[number], number>, onUpdate: () => this._actApplyOffset(_obj.offset) })
             .call( () => {
-                this._actApplyOffset(offset);
+                //this._actApplyOffset(offset);
                 this._tween = null;
             } )
             .start();
     }
 
     protected _actApplyOffset(offset: number) {
+        console.log("_actApplyOffset", offset);
         this._intCurrentOffset = offset;
         const _length = this._pages.length;
 
@@ -222,6 +233,16 @@ export class UI_DualScroller_Controller extends Component {
     }
 
     protected _getPageWidth() {
+        if (this._pages && this._pages.length > 0 && this._pages[0]?.node) {
+            const transform = this._pages[0].node.getComponent(UITransform);
+            if (transform && transform.contentSize.width > 0) {
+                return transform.contentSize.width;
+            }
+        }
+        const transform = this.node.getComponent(UITransform);
+        if (transform && transform.contentSize.width > 0) {
+            return transform.contentSize.width;
+        }
         return view.getVisibleSize().width;
     }
 }
