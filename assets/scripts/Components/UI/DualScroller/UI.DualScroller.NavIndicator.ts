@@ -18,11 +18,11 @@ export class UI_DualScroller_NavIndicator extends Component {
     protected _x: number = 0
 
     protected start(): void {
-        const _icon = this.icon.at(0);
-        if(this.icon.length > 0 && _icon) {
-            this._x = _icon.position.x;
-            this.node.setPosition(this._x, this.node.position.y, 0);
-        }
+        //const _icon = this.icon.at(0);
+        //if(this.icon.length > 0 && _icon) {
+        //    this._x = _icon.position.x;
+        //    this.node.setPosition(this._x, this.node.position.y, 0);
+        //}
     }
 
     protected update(dt: number): void {
@@ -32,16 +32,16 @@ export class UI_DualScroller_NavIndicator extends Component {
     }
 
     actUpdatePosition(current: number) {
-        if(!this.icon.length) return;
+        //if(!this.icon.length) return;
 
-        const _total = this.icon.length;
-        const _fidx = math.clamp(Math.floor(current), 0 , _total - 1);
-        const _cidx = math.clamp(Math.ceil(current), 0, _total - 1);
-        const _temp = current - Math.floor(_cidx);
+        //const _total = this.icon.length;
+        //const _fidx = math.clamp(Math.floor(current), 0 , _total - 1);
+        //const _cidx = math.clamp(Math.ceil(current), 0, _total - 1);
+        //const _temp = current - _fidx;
 
-        const _posA = this.icon.at(_fidx)?.position ?? Vec3.ZERO;
-        const _posB = this.icon.at(_cidx)?.position ?? Vec3.ZERO;
+        //const _posA = this.icon.at(_fidx)?.position ?? Vec3.ZERO;
+        //const _posB = this.icon.at(_cidx)?.position ?? Vec3.ZERO;
 
-        this._x = math.lerp(_posA.x, _posB.x, _temp);
+        //this._x = math.lerp(_posA.x, _posB.x, _temp);
     }
 }
