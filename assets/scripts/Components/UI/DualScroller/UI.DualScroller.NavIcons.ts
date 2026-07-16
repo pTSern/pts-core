@@ -18,6 +18,7 @@ export class UI_DualScroller_NavIcons extends Component {
     }
 
     protected onLoad(): void {
+        !this.icons.length && (this.icons = this.getComponentsInChildren(UI_DualScroller_NavIcon));
         this.icons.forEach((_, i) => _.setIndex(i));
     }
 

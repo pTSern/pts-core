@@ -54,7 +54,7 @@ export class UI_DualScroller_Controller extends Component {
     protected _pages: UI_DualScroller_Page[] = []
 
     @editor_property()
-    protected _numCurrentPage: number = 0;
+    protected _intCurrentPage: number = 0;
 
     @editor_property()
     protected _intCurrentOffset: number = 0;
@@ -76,6 +76,15 @@ export class UI_DualScroller_Controller extends Component {
 
     protected _tween: Tween = null
 
+    @editor_property()
+    protected _intPageBeforeMove: number = 0;
+
+    protected _intEnteringPage: number = -1;
+    protected _intExitingPage: number = -1;
+
+    protected _numTouchStartY: number = 0;
+    protected _hasDeterminedDirection: boolean = false;
+
     protected onLoad(): void {
         this._actCollectingPages();
         this._numPageWidth = this._getPageWidth();
@@ -93,7 +102,19 @@ export class UI_DualScroller_Controller extends Component {
 
         this._numPageWidth = this._getPageWidth();
 
-        this._actSnapTo(page, duration);
+        const _last = this._intCurrentPage;
+        const _target = math.clamp(page, 0, this._pages.length - 1);
+
+        this._intPageBeforeMove = _last;
+
+        if (_last !== _target) {
+            this._pages[_last]?.actStartExiting();
+            this._pages[_target]?.actStartEntering();
+            this._intEnteringPage = _target;
+            this._intExitingPage = _last;
+        }
+
+        this._actSnapTo(_target, duration);
     }
 
     protected onDestroy(): void {
@@ -103,10 +124,10 @@ export class UI_DualScroller_Controller extends Component {
     protected bind(isOn: boolean) {
         const _method = isOn ? 'on' : 'off';
 
-        this.node[_method](Node.EventType.TOUCH_START, this._onTouchStart, this);
-        this.node[_method](Node.EventType.TOUCH_MOVE, this._onTouchMove, this);
-        this.node[_method](Node.EventType.TOUCH_END, this._onTouchEnd, this);
-        this.node[_method](Node.EventType.TOUCH_CANCEL, this._onTouchEnd, this);
+        this.node[_method](Node.EventType.TOUCH_START, this._onTouchStart, this, true);
+        this.node[_method](Node.EventType.TOUCH_MOVE, this._onTouchMove, this, true);
+        this.node[_method](Node.EventType.TOUCH_END, this._onTouchEnd, this, true);
+        this.node[_method](Node.EventType.TOUCH_CANCEL, this._onTouchEnd, this, true);
 
         this.bar?.[_method]('onIconClicked', { func: this._actScrollTo, binder: this })
     }
@@ -118,25 +139,51 @@ export class UI_DualScroller_Controller extends Component {
         this._numPageWidth = this._getPageWidth();
 
         this._numTouchStartX = _loc.x;
+        this._numTouchStartY = _loc.y;
         this._numTouchStartOffset = this._intCurrentOffset;
         this._numTouchStartTime = Date.now();
-        this._isDragging = true;
+        this._isDragging = false;
+        this._hasDeterminedDirection = false;
     }
 
     protected _onTouchMove(event: EventTouch) {
-        if(!this._isDragging) return;
-
         const _loc = event.getUILocation();
-        const _dtX = _loc.x - this._numTouchStartX;
 
+        if (!this._hasDeterminedDirection) {
+            const _dx = Math.abs(_loc.x - this._numTouchStartX);
+            const _dy = Math.abs(_loc.y - this._numTouchStartY);
+            if (_dx > 5 || _dy > 5) {
+                this._hasDeterminedDirection = true;
+                if (_dx > _dy) {
+                    this._isDragging = true;
+                    this._intPageBeforeMove = this._intCurrentPage;
+                    event.propagationStopped = true;
+                } else {
+                    this._isDragging = false;
+                }
+            }
+            return;
+        }
+
+        if (!this._isDragging) return;
+
+        const _dtX = _loc.x - this._numTouchStartX;
         const _offset = this._numTouchStartOffset - _dtX;
 
         this._actApplyOffset(_offset);
+        event.propagationStopped = true;
     }
 
     protected _onTouchEnd(event: EventTouch) {
-        if(!this._isDragging) return;
+        if (!this._isDragging) {
+            this._isDragging = false;
+            this._hasDeterminedDirection = false;
+            return;
+        }
         this._isDragging = false;
+        this._hasDeterminedDirection = false;
+
+        event.propagationStopped = true;
 
         const _loc = event.getUILocation();
         const _elapsed = ( Date.now() - this._numTouchStartTime ) / 1000;
@@ -163,17 +210,37 @@ export class UI_DualScroller_Controller extends Component {
         const _length = this._pages.length;
         if (!_length) return;
 
-        const _targetPage = math.clamp(page, 0, _length - 1);
-        const _offset = _targetPage * this._numPageWidth;
+        const _last = this._intPageBeforeMove;
+        const _target = math.clamp(page, 0, _length - 1);
+        const _offset = _target * this._numPageWidth;
 
-        const _obj = { offset: this._intCurrentOffset };
-        this.bar?.actUpdateIcons(_targetPage);
-        this.indicator?.actUpdatePosition(_targetPage);
+        const _obj = { _offset: this._intCurrentOffset };
+        this.bar?.actUpdateIcons(_target);
+        this.indicator?.actUpdatePosition(_target);
+
+        console.log("TWEEN >> SNAP FROM: ", _last, " >> TO >>", _target)
         this._tween = tween(_obj)
-            .to(duration, { offset: _offset }, { easing: this.easing.get as pFlex.TFunc<[number], number>, onUpdate: () => this._actApplyOffset(_obj.offset) })
+            .to(duration,
+                { _offset },
+                {
+                    easing: this.easing.get as pFlex.TFunc<[number], number>,
+                    onUpdate: () => this._actApplyOffset(_obj._offset)
+                }
+            )
             .call( () => {
                 this._actApplyOffset(_offset);
                 this._tween = null;
+                if (_last !== _target) {
+                    this._pages[_last]?.actExitCompletely();
+                    this._pages[_target]?.actEnterCompletely();
+                } else {
+                    this._pages[_target]?.actEnterCompletely();
+                }
+                if (this._intEnteringPage !== -1 && this._intEnteringPage !== _target) {
+                    this._pages[this._intEnteringPage]?.actCancelEnter();
+                }
+                this._intEnteringPage = -1;
+                this._intExitingPage = -1;
             } )
             .start();
     }
@@ -200,14 +267,41 @@ export class UI_DualScroller_Controller extends Component {
         //this.bar?.actUpdateIcons(_float);
         //this.indicator?.actUpdatePosition(_float);
 
-        const _rpage = Math.round(_float);
+        this._intCurrentPage = Math.round(_float);
 
-        if(_rpage !== this._numCurrentPage) {
-            const _prev = this._numCurrentPage;
-            this._numCurrentPage = _rpage;
+        if (this._isDragging) {
+            let _entering = -1;
+            let _exiting = -1;
 
-            this._pages[_prev]?.actExitPage();
-            this._pages[_rpage]?.actEnterPage();
+            if (_float > this._intPageBeforeMove) {
+                _entering = math.clamp(Math.ceil(_float), 0, _length - 1);
+                _exiting = math.clamp(Math.floor(_float), 0, _length - 1);
+            } else if (_float < this._intPageBeforeMove) {
+                _entering = math.clamp(Math.floor(_float), 0, _length - 1);
+                _exiting = math.clamp(Math.ceil(_float), 0, _length - 1);
+            }
+
+            if (_entering === _exiting) {
+                _entering = -1;
+                _exiting = -1;
+            }
+
+            if (_entering !== this._intEnteringPage) {
+                if (this._intEnteringPage !== -1 && this._intEnteringPage !== _entering) {
+                    this._pages[this._intEnteringPage]?.actCancelEnter();
+                }
+                this._intEnteringPage = _entering;
+                if (this._intEnteringPage !== -1) {
+                    this._pages[this._intEnteringPage]?.actStartEntering();
+                }
+            }
+
+            if (_exiting !== this._intExitingPage) {
+                this._intExitingPage = _exiting;
+                if (this._intExitingPage !== -1) {
+                    this._pages[this._intExitingPage]?.actStartExiting();
+                }
+            }
         }
     }
 
@@ -225,7 +319,7 @@ export class UI_DualScroller_Controller extends Component {
             const _page = _pages[i];
             if(!_page) continue;
 
-            _page.index = i;
+            _page.init(i);
             this._pages.push(_page);
         }
     }
