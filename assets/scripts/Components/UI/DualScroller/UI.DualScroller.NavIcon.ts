@@ -6,9 +6,16 @@ const { ccclass } = _decorator;
 @ccclass('UI_DualScroller_NavIcon')
 export class UI_DualScroller_NavIcon extends Component {
     @editor_property()
-    protected _isToggle: boolean = false;
+    protected _isToggle: boolean = true;
+
+    @editor_property()
+    protected _index: number = -1
+
+    @editor_property()
+    protected _isSeal: boolean = false;
 
     get isToggle() { return this._isToggle }
+    get index() { return this._index }
 
     protected _onToggleOn?(): void
     protected _onToggleOff?(): void
@@ -31,4 +38,10 @@ export class UI_DualScroller_NavIcon extends Component {
         status ? this.actToggleOn() : this.actToggleOff()
     }
 
+    setIndex(index: number) {
+        if(this._isSeal) return;
+
+        this._isSeal = true;
+        this._index = index;
+    }
 }

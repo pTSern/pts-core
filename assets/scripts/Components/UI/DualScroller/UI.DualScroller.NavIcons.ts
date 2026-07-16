@@ -17,6 +17,10 @@ export class UI_DualScroller_NavIcons extends Component {
         this.icons = x.getComponentsInChildren(UI_DualScroller_NavIcon);
     }
 
+    protected onLoad(): void {
+        this.icons.forEach((_, i) => _.setIndex(i));
+    }
+
     actForEach(func: pFlex.TFunc<[UI_DualScroller_NavIcon, number], void>) {
         if(!func) return;
 

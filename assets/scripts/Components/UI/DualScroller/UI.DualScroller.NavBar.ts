@@ -41,10 +41,9 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
     }
 
     protected _actBindClickEvents() {
-        this.icon.actForEach( (_, i) => {
+        this.icon.actForEach( _ => {
             if(!_) return;
 
-            (_ as any).index = i;
             _.node.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
             _.node.on(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
         } )
@@ -61,13 +60,11 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
     }
 
     private _onIconTouchEnd(event: EventTouch) {
-        const _icon = event.currentTarget.getComponent(UI_DualScroller_NavIcon);
-        if (_icon) {
-            const _index = (_icon as any).index;
-            if (typeof _index === 'number') {
-                this.emit('onIconClicked', _index);
-            }
-        }
+        const _node = event.target as Node;
+        if(typeof _node.getComponent !== 'function') return;
+
+        const _icon = _node.getComponent(UI_DualScroller_NavIcon);
+        _icon && this.emit('onIconClicked', _icon.index);
     }
 
     public actUpdateIcons(current: number) {
@@ -76,17 +73,6 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
         this.icon.actForEach( (_, i) => 
             _.toggle?.( i === current )
          )
-    }
-
-    actSnapTo(index: number, duration: number = 0.3) {
-        const _obj = { value: this._numCurrentPage };
-
-        tween(_obj)
-            .to(
-                duration,
-                { value: index },
-                { onUpdate: () => this.actUpdateIcons(_obj.value) }
-            ).start();
     }
 
 }
