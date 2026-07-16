@@ -93,11 +93,7 @@ export class UI_DualScroller_Controller extends Component {
 
         this._numPageWidth = this._getPageWidth();
 
-        const _length = this._pages.length;
-        const _target = math.clamp(page, 0, _length - 1);
-
-        const _offset = _target * this._numPageWidth;
-        this._actSnapTo(_offset, duration);
+        this._actSnapTo(page, duration);
     }
 
     protected onDestroy(): void {
@@ -158,28 +154,34 @@ export class UI_DualScroller_Controller extends Component {
             _target = Math.round(_float);
         }
 
-        const _offset = _target * this._numPageWidth;
-
-        this._actSnapTo(_offset, this.numSnapDuration);
+        this._actSnapTo(_target, this.numSnapDuration);
     }
 
-    protected _actSnapTo(offset: number, duration: number) {
+    protected _actSnapTo(page: number, duration: number) {
         this._actStopSnapping();
 
+        const _length = this._pages.length;
+        if (!_length) return;
+
+        const _targetPage = math.clamp(page, 0, _length - 1);
+        const _offset = _targetPage * this._numPageWidth;
+
         const _obj = { offset: this._intCurrentOffset };
-        this._actApplyOffset(offset);
+        this.bar?.actUpdateIcons(_targetPage);
+        this.indicator?.actUpdatePosition(_targetPage);
         this._tween = tween(_obj)
-            .to(duration, { offset }, { easing: this.easing.get as pFlex.TFunc<[number], number>, onUpdate: () => this._actApplyOffset(_obj.offset) })
+            .to(duration, { offset: _offset }, { easing: this.easing.get as pFlex.TFunc<[number], number>, onUpdate: () => this._actApplyOffset(_obj.offset) })
             .call( () => {
-                //this._actApplyOffset(offset);
+                this._actApplyOffset(_offset);
                 this._tween = null;
             } )
             .start();
     }
 
     protected _actApplyOffset(offset: number) {
-        console.log("_actApplyOffset", offset);
+        if(this._intCurrentOffset === offset) return
         this._intCurrentOffset = offset;
+        console.log("_actApplyOffset", offset)
         const _length = this._pages.length;
 
         if(!_length || !this._numPageWidth) return;
@@ -195,8 +197,8 @@ export class UI_DualScroller_Controller extends Component {
             _.actScrollUpdate(_numNormOffset);
         } )
 
-        this.bar?.actUpdateIcons(_float);
-        this.indicator?.actUpdatePosition(_float);
+        //this.bar?.actUpdateIcons(_float);
+        //this.indicator?.actUpdatePosition(_float);
 
         const _rpage = Math.round(_float);
 
