@@ -4,8 +4,7 @@ import { DEV, EDITOR, EDITOR_NOT_IN_PREVIEW } from "cc/env";
 import * as pArray from "./pArray";
 import * as pConst from "./pConst";
 import * as cc from 'cc';
-import * as pObject from './pObject'
-import { CC_EnumList, CC_IEnumable } from "../interfaces/cc/CC.IEnumable";
+import { CC_IEnumable } from "../interfaces/cc/CC.IEnumable";
 
 /**
  * pClass: All class-based patterns, binders, and decorators.
@@ -30,40 +29,43 @@ function _resolver(constructor: pFlex.TCtor) {
 
 // --- Foundation ---
 
-const _$list = [ 'AllComponents', 'NoneComponent', "cc.Component", "Exclude.cc.Component", "cc.Asset" ] as const;
-export const EList = CC_IEnumable(_$list);
-export type EList = (typeof _$list[number]) | "All";
-type _TObj<_Type = any> = Record<string, pFlex.TCtor<_Type>>;
-const _$pool = js.createMap<Record<typeof _$list[number], _TObj>>(true);
+const _$list = [ 'AllComponents', 'NoneComponent', "cc.Component", "Exclude.cc.Component", "cc.Asset", "All" ] as const;
+export const EList = CC_IEnumable.generator(_$list);
+export type EList = (typeof _$list[number])
+const _$pool = js.createMap<Record<EList, Set<string>>>(true);
 
-export function getAllCCClasses(type: EList = 'All'): _TObj {
+export function getAllCCClasses(type: EList = 'All'): Set<string> {
     const _all = js._nameToClass;
-    if(type === 'All') return _all;
 
     if(_$pool[type]) return _$pool[type];
 
-    for(const _key in _$list) {
-        _$pool[_key] = js.createMap(true);
+    for(const _key of _$list) {
+        _$pool[_key] = new Set();
     }
 
     for(const _k in _all) {
-        if (!Object.prototype.hasOwnProperty.call(_all, _k)) continue;
+        //if (!Object.prototype.hasOwnProperty.call(_all, _k)) continue;
         const _v = _all[_k];
 
         if(_v === cc.Component || _v.prototype instanceof cc.Component) {
-            _$pool['AllComponents'][_k] = _v;
+            _$pool['AllComponents'].add(_k);
 
             const _sub = _k.includes('cc.') ? "cc.Component" : "Exclude.cc.Component";
-            _$pool[_sub][_k] = _v;
+            _$pool[_sub].add(_k);
+
         } else if(_v === cc.Asset || _v.prototype instanceof cc.Asset) {
-            _$pool['cc.Asset'][_k] = _v
+            _$pool['cc.Asset'].add(_k);
         } else {
-            _$pool['NoneComponent'][_k] = _v
+            _$pool['NoneComponent'].add(_k);
         }
+
+        _$pool['All'].add(_k);
     }
 
-    return _$pool[type] || _all;
+    return _$pool[type];
 }
+
+getAllCCClasses('cc.Component')
 
 if(DEV) {
     window['pTS_utils_pClas_$pool'] = _$pool;
