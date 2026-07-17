@@ -15,6 +15,7 @@ const __pool__ = js.createMap(true);
 
 // Constants
 export const VOID_FUNC = () => void 0;
+export const ME_FUNC = _ => _;
 
 export function getNumFunc(num: number) {
     num = typeof num == 'number' ? num : 0
@@ -48,6 +49,7 @@ export const KEYS = {
 
 export const GROUPS = {
     CORE: { name: "Core", id: "0", displayOrder: 1000 },
+    DEBUGGER: { name: "Debug", id: "0" },
     UI: { name: "UI", id: "0" },
     AUDIO: { name: "Audio", id: "0" },
     ANIM: { name: "Anim", id: "0" },

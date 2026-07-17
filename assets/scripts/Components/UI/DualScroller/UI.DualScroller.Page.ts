@@ -42,18 +42,17 @@ export class UI_DualScroller_Page extends Component {
     }
 
     public actExitCompletely() {
-        _$log("actExitCompletely", this.name)
+        _$log("actExitCompletely", this.name);
         this._onExitCompletely?.();
     }
 
     public actEnterCompletely() {
-        _$log("actEnterCompletely", this.name)
-
+        _$log("actEnterCompletely", this.name);
         this._onEnterCompletely?.();
     }
 
     public actCancelEnter() {
-        _$log("actCancelEnter", this.name)
+        _$log("actCancelEnter", this.name);
         this._onCancelEnter?.();
     }
 
