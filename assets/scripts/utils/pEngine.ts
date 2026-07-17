@@ -1,7 +1,7 @@
 
-import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, DirectorEvent, _decorator } from "cc";
+import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, DirectorEvent, _decorator, Button } from "cc";
 import { DEBUG } from "cc/env";
-import { IS_CACHED_ALL_NODES_N_COMPS, IS_CACHED_ALL_COMPS_ON_AFTER_SCENE_LAUNCH } from 'cc/userland/macro'
+//import { IS_CACHED_ALL_NODES_N_COMPS, IS_CACHED_ALL_COMPS_ON_AFTER_SCENE_LAUNCH } from 'cc/userland/macro'
 import { EDITOR } from "cc/env";
 import * as pArray from "./pArray";
 import * as pClass from './pClass';
@@ -105,87 +105,87 @@ if(DEBUG) {
 //    })
 //})
 
-if(IS_CACHED_ALL_COMPS_ON_AFTER_SCENE_LAUNCH) {
-    director.once(Director.EVENT_BEFORE_SCENE_LAUNCH, function(_scene: Scene) {
-        _scene.getComponentsInChildren(Component).forEach( _curr => __pool_[_curr.uuid] = _curr )
-    })
-}
+//if(IS_CACHED_ALL_COMPS_ON_AFTER_SCENE_LAUNCH) {
+//    director.once(Director.EVENT_BEFORE_SCENE_LAUNCH, function(_scene: Scene) {
+//        _scene.getComponentsInChildren(Component).forEach( _curr => __pool_[_curr.uuid] = _curr )
+//    })
+//}
 
-const _destroyer = Node.prototype.destroy;
-Node.prototype.destroy = function() {
-    const _uuid = this.zid;
-    const _out = _destroyer.call(this);
-
-    _out && ( delete __pool_[_uuid] )
-
-    return _out;
-}
-
-const _remover = Component.prototype.destroy;
-Component.prototype.destroy = function() {
-    const _uuid = this.zid;
-    const _out = _remover.call(this);
-    _out && (delete __pool_[_uuid])
-
-    return _out;
-}
+//const _destroyer = Node.prototype.destroy;
+//Node.prototype.destroy = function() {
+//    const _uuid = this.zid;
+//    const _out = _destroyer.call(this);
+//
+//    _out && ( delete __pool_[_uuid] )
+//
+//    return _out;
+//}
+//
+//const _remover = Component.prototype.destroy;
+//Component.prototype.destroy = function() {
+//    const _uuid = this.zid;
+//    const _out = _remover.call(this);
+//    _out && (delete __pool_[_uuid])
+//
+//    return _out;
+//}
 
 export const NodeUtils = js.createMap<_INodeUtils>();
 
-if(IS_CACHED_ALL_NODES_N_COMPS) {
-    const _batcher = Node.prototype._onBatchCreated;
-    Node.prototype._onBatchCreated = function(is) {
-        __pool_[this.zid] = this
-
-        return _batcher.call(this, is);
-    }
-
-    const _adder = Node.prototype.addComponent;
-    Node.prototype.addComponent = function<_T extends Component>(type: string | pFlex.TCtor<any, _T>) {
-        const _out: _T = _adder.call(this, type);
-        !!_out && ( __pool_[_out.zid] = _out)
-        return _out;
-    }
-
-    NodeUtils.findNodeOrCompViaZid = function(uuid) {
-        return __pool_[uuid];
-    }
-
-} else {
-    NodeUtils.findNodeOrCompViaZid = function(uuid) {
-        let _out = __pool_[uuid];
-
-        if(!_out) {
-            const _scene = director.getScene();
-            if(!_scene) return null;
-
-            const _stack: Node[] = [_scene];
-
-            while(_stack.length > 0) {
-                const _node = _stack.pop()!;
-                __pool_[_node.zid] = _node;
-
-                if(_node.zid === uuid) {
-                    return _node;
-                }
-
-
-                for(const _comp of _node.components) {
-                    __pool_[_comp.zid] = _comp;
-                    if(_comp.zid === uuid) {
-                        return _comp;
-                    }
-                }
-
-                const _children = _node.children;
-                for(let i = _children.length - 1; i >= 0; i--) {
-                    _stack.push(_children[i])
-                }
-            }
-        }
-        return _out;
-    }
-}
+//if(IS_CACHED_ALL_NODES_N_COMPS) {
+//    const _batcher = Node.prototype._onBatchCreated;
+//    Node.prototype._onBatchCreated = function(is) {
+//        __pool_[this.zid] = this
+//
+//        return _batcher.call(this, is);
+//    }
+//
+//    const _adder = Node.prototype.addComponent;
+//    Node.prototype.addComponent = function<_T extends Component>(type: string | pFlex.TCtor<any, _T>) {
+//        const _out: _T = _adder.call(this, type);
+//        !!_out && ( __pool_[_out.zid] = _out)
+//        return _out;
+//    }
+//
+//    NodeUtils.findNodeOrCompViaZid = function(uuid) {
+//        return __pool_[uuid];
+//    }
+//
+//} else {
+//    NodeUtils.findNodeOrCompViaZid = function(uuid) {
+//        let _out = __pool_[uuid];
+//
+//        if(!_out) {
+//            const _scene = director.getScene();
+//            if(!_scene) return null;
+//
+//            const _stack: Node[] = [_scene];
+//
+//            while(_stack.length > 0) {
+//                const _node = _stack.pop()!;
+//                __pool_[_node.zid] = _node;
+//
+//                if(_node.zid === uuid) {
+//                    return _node;
+//                }
+//
+//
+//                for(const _comp of _node.components) {
+//                    __pool_[_comp.zid] = _comp;
+//                    if(_comp.zid === uuid) {
+//                        return _comp;
+//                    }
+//                }
+//
+//                const _children = _node.children;
+//                for(let i = _children.length - 1; i >= 0; i--) {
+//                    _stack.push(_children[i])
+//                }
+//            }
+//        }
+//        return _out;
+//    }
+//}
 
 NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.TCtor[]): string[] {
     const _ctor = (typeof target === 'function' ? target : target.constructor) as any;
@@ -271,21 +271,62 @@ export interface IEventBinders { _options: pFlex.TArray<IEventTarget>; _type: pF
 export interface IEventRemover { _target: pFlex.TArray<TFlexTarget>; _type: string | NodeEventType; }
 export interface IEventBinder { _target: TFlexTarget; _type: string | NodeEventType; _handler: pFlex.TFunc; _binder?: any; _capture?: any; }
 
+type _TComp = pFlex.TCtor<Component> | string
+
 interface _ICompUtils {
-    forceAwake: (comp: Component) => void;
-    getSafe: <T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T>) => T;
+    awake: (comp: Component) => void;
+    get: <T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T>) => T;
     binds: (target: Component, key: string, binder: Component, handler: string) => void;
     appends: (events: pFlex.TArray<IEventBinders>) => void;
+
+    removes(target: pFlex.TArray<TFlexTarget>, type: pFlex.TArray<_TComp>, ...types: _TComp[]): void
+
+    //actBindBtn(target: pFlex.TArray<Button>, method: pFlex.TFunc<[Button], void>, binder?: any): void
 }
 
 export const CompUtils = js.createMap<_ICompUtils>(); 
-CompUtils.forceAwake = function(comp: Component) {
+//CompUtils.actBindBtn = function(target, method, binder) {
+//    const _btns = pArray.flatter(target).filter(_ => !!_ && _.isValid && !!_.node && !_.node.isValid);
+//
+//    _btns.forEach(_ => _.node.on(Button.EventType.CLICK))
+//
+//}
+
+CompUtils.removes = function(t, e, ...es) {
+    es = pArray.flat(e, es).map(_ => typeof _ === 'string' ? js.getClassByName(_) : _);
+    const _ns = pArray.flatter(t);
+
+    for(const _t of _ns) {
+        const _n = _t instanceof Node ? _t : _t.node;
+
+        es.forEach((_: pFlex.TCtor<Component>) => {
+            const cls = _;
+
+            const comps = _n.components;
+            if ((cls as any)._sealed) {
+                for (let i = 0; i < comps.length; ++i) {
+                    const comp = comps[i];
+                    (comp.constructor === _) && comp.destroy();
+                }
+            } else {
+                for (let i = 0; i < comps.length; ++i) {
+                    const comp = comps[i];
+                    (comp instanceof _) && comp.destroy();
+                }
+            }
+        })
+
+    }
+
+}
+
+CompUtils.awake = function(comp: Component) {
     if (!comp || (comp as any)._isOnLoadCalled) return;
     const _comp = comp as any;
     _comp.__preload?.(); _comp.onLoad?.(); _comp.onEnable?.(); _comp.start?.();
 }
 
-CompUtils.getSafe = function<T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T>): T {
+CompUtils.get = function<T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T>): T {
     const n = target instanceof Node ? target : target.node;
     return n.getComponent(cls) || n.addComponent(cls);
 }

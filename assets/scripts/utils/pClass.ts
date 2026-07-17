@@ -102,10 +102,29 @@ export function wait<T>(constructor: pFlex.TCtor<any, T>): Promise<T> {
     return data.resolved ? Promise.resolve(instance(constructor)) : data.promise;
 }
 
+function _logger(who: any, name: string) {
+    who['_$L'] = js.createMap();
+
+    who['_$L'].log = console.log.bind(console, `[${name}] Log: `);
+    who['_$L'].warn = console.log.bind(console, `[${name}] Warn: `);
+    who['_$L'].error = console.log.bind(console, `[${name}] Error: `);
+
+    return who;
+}
+
 type _TMode = 'EDITOR_NOT_IN_PREVIEW' | "EDITOR" | "EDITOR_ONLY_IN_PREVIEW" | "RUNTIME"
-export function editor_ccclass(name: string, mode: _TMode = "EDITOR_ONLY_IN_PREVIEW") {
+export function editor_ccclass(name: string, mode: _TMode = "EDITOR_ONLY_IN_PREVIEW", logger: boolean = true) {
     const should = _$hould(mode)
-    return (target: any) => should ? _decorator.ccclass(name)(target) : void 0;
+    return (target: any) => {
+        logger && _logger(target, name);
+        return should ? _decorator.ccclass(name)(target) : void 0
+    };
+}
+
+export function logcat(who: any, method: 'log' | 'warn' | 'error') {
+    const _target = who['_$L'] || console;
+
+    return _target[method] as pFlex.TFunc<any, void>
 }
 
 function _$hould(mode: _TMode) {

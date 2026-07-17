@@ -1,3 +1,5 @@
+import { pConst } from "../../utils";
+
 export type CC_IEnumable<_TKey extends pFlex.TKey> = {
     __enums__: null;
 } & Record<_TKey, any>;
@@ -27,4 +29,21 @@ export function CC_IEnumList<_TKey extends pFlex.TKey, _TValue extends pFlex.TKe
     if(typeof _target !== 'object') return false 
 
     return ('name' in _target && 'value' in _target)
+}
+
+export function CC_EnumList<_T_UI_Id extends pFlex.TKey>(list: CC_IEnumList<_T_UI_Id, _T_UI_Id>[]  | CC_IEnumable<_T_UI_Id> | _T_UI_Id[], val: pFlex.TFunc<[_T_UI_Id], _T_UI_Id> = pConst.ME_FUNC) {
+    let _list: CC_IEnumList<_T_UI_Id, _T_UI_Id>[] = []
+    if(CC_IEnumable(list)) {
+        for(const [k, v] of Object.entries(list)) {
+            if(k === '__enums__') continue;
+            _list.push({ name: k as _T_UI_Id, value: v })
+        }
+    } else if (CC_IEnumList(list)) {
+        _list = list
+    } else {
+        for(const ret of list) {
+            _list.push({ name: ret, value: val(ret) })
+        }
+    }
+    return _list 
 }
