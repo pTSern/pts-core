@@ -1,9 +1,11 @@
 
 import { js, Component, director, _decorator } from "cc";
-import { EDITOR, EDITOR_NOT_IN_PREVIEW } from "cc/env";
+import { DEV, EDITOR, EDITOR_NOT_IN_PREVIEW } from "cc/env";
 import * as pArray from "./pArray";
 import * as pConst from "./pConst";
 import * as cc from 'cc';
+import * as pObject from './pObject'
+import { CC_EnumList, CC_IEnumable } from "../interfaces/cc/CC.IEnumable";
 
 /**
  * pClass: All class-based patterns, binders, and decorators.
@@ -15,8 +17,6 @@ const _singletonKeys = pConst.KEYS.SINGLETON;
 const _waiters = new Map<Function, { promise: Promise<any>, resolve: pFlex.TFunc, resolved: boolean }>();
 
 // --- Helpers ---
-
-let __components_: Record<string, pFlex.TCtor<any, cc.Component>> | null = null;
 
 function _resolver(constructor: pFlex.TCtor) {
     let data = _waiters.get(constructor);
@@ -30,16 +30,43 @@ function _resolver(constructor: pFlex.TCtor) {
 
 // --- Foundation ---
 
-export function getAllComponents<_TComponent extends cc.Component>(isCCOnly: boolean): Record<string, pFlex.TCtor<any, _TComponent>> {
-    if (isCCOnly) {
-        if (__components_) return __components_ as Record<string, pFlex.TCtor<any, _TComponent>>;
-        __components_ = {};
-        for (const [k, v] of Object.entries(cc.js._nameToClass)) {
-            if (k.includes('cc.')) __components_[k] = v as pFlex.TCtor<any, cc.Component>;
-        }
-        return __components_ as Record<string, pFlex.TCtor<any, _TComponent>>;
+const _$list = [ 'AllComponents', 'NoneComponent', "cc.Component", "Exclude.cc.Component", "cc.Asset" ] as const;
+export const EList = CC_IEnumable(_$list);
+export type EList = (typeof _$list[number]) | "All";
+type _TObj<_Type = any> = Record<string, pFlex.TCtor<_Type>>;
+const _$pool = js.createMap<Record<typeof _$list[number], _TObj>>(true);
+
+export function getAllCCClasses(type: EList = 'All'): _TObj {
+    const _all = js._nameToClass;
+    if(type === 'All') return _all;
+
+    if(_$pool[type]) return _$pool[type];
+
+    for(const _key in _$list) {
+        _$pool[_key] = js.createMap(true);
     }
-    return cc.js._nameToClass as Record<string, pFlex.TCtor<any, _TComponent>>;
+
+    for(const _k in _all) {
+        if (!Object.prototype.hasOwnProperty.call(_all, _k)) continue;
+        const _v = _all[_k];
+
+        if(_v === cc.Component || _v.prototype instanceof cc.Component) {
+            _$pool['AllComponents'][_k] = _v;
+
+            const _sub = _k.includes('cc.') ? "cc.Component" : "Exclude.cc.Component";
+            _$pool[_sub][_k] = _v;
+        } else if(_v === cc.Asset || _v.prototype instanceof cc.Asset) {
+            _$pool['cc.Asset'][_k] = _v
+        } else {
+            _$pool['NoneComponent'][_k] = _v
+        }
+    }
+
+    return _$pool[type] || _all;
+}
+
+if(DEV) {
+    window['pTS_utils_pClas_$pool'] = _$pool;
 }
 
 export function convert(listener: pFlex.THandler<any[], any>): pFlex.IBinder {

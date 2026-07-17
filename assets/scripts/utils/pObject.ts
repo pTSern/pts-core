@@ -105,3 +105,26 @@ export function isReadOnlyProperty(obj: any, propName: string): boolean {
     }
     return false;
 }
+
+export function actChainBinder(chain: pFlex.TArray<string>, global: any = window, def: pFlex.TFunc<[string], any> = () => {}) {
+    let _chains: string[] = null
+
+    if (Array.isArray(chain)) {
+        _chains = chain.map(_ => _.replace(/,/g, ""))
+    } else {
+        _chains = chain.replace(/,/g, "").split('.');
+    }
+
+    if (!_chains || _chains.length <= 0) return;
+
+    let current = global;
+    for (let i = 0; i < _chains.length; i++) {
+        const key = _chains[i];
+        if (!key) continue;
+
+        current[key] = current[key] || def(key);
+        current = current[key];
+    }
+
+    return current;
+}
