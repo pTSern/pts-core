@@ -65,8 +65,6 @@ export function getAllCCClasses(type: EList = 'All'): Set<string> {
     return _$pool[type];
 }
 
-getAllCCClasses('cc.Component')
-
 if(DEV) {
     window['pTS_utils_pClas_$pool'] = _$pool;
 }
