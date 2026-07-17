@@ -1,4 +1,4 @@
-import { _decorator, CCClass, Enum } from 'cc';
+import { _decorator, CCClass, Enum, js } from 'cc';
 import { Helper_Param_Base } from './Helper.Param.Base';
 import { pClass, pConst } from '../../utils';
 import { Editor_Smart_SelfFocus } from '../../editor/Smart/Editor.Smart.SelfFocus';
@@ -27,7 +27,7 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
 
     focus(): void {
         const _list = pClass.getAllCCClasses(this._filter);
-        const _cce = CC_EnumList(Object.keys(_list));
+        const _cce = CC_EnumList(Array.from(_list));
         CCClass.Attr.setClassAttr(this, 'type', 'enumList', _cce);
     }
 }

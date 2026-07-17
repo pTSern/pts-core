@@ -1,3 +1,4 @@
+import { PlacementInfo } from "cc";
 import { pConst } from "../../utils";
 
 export type CC_IEnumable<_TKey extends pFlex.TKey> = {
@@ -6,7 +7,7 @@ export type CC_IEnumable<_TKey extends pFlex.TKey> = {
 
 export type CC_IEnumList<_TKey extends pFlex.TKey, _TValue extends pFlex.TKey> = { name: _TKey, value: _TValue }
 
-export function CC_IEnumable<_TKey extends pFlex.TKey>(target: any | Record<_TKey, any>): target is CC_IEnumable<_TKey> {
+function _is_CC_IEnumable<_TKey extends pFlex.TKey>(target: any | Record<_TKey, any>): target is CC_IEnumable<_TKey> {
     if(!target) return false;
 
     if(typeof target === 'object') {
@@ -15,6 +16,24 @@ export function CC_IEnumable<_TKey extends pFlex.TKey>(target: any | Record<_TKe
 
     return false;
 }
+
+export const CC_IEnumable = Object.assign(_is_CC_IEnumable, {
+    is: _is_CC_IEnumable,
+    generator: function<_TKey extends pFlex.TKey>(target: Record<_TKey, any> | _TKey[]): CC_IEnumable<_TKey> {
+        const _obj = { __enums__: null } as CC_IEnumable<_TKey>
+        if(!target) return _obj;
+
+        if(Array.isArray(target)) {
+            //@ts-ignore
+            target.forEach(_ => _obj[_] = _ )
+        } else {
+            target['__enums__'] = null;
+            return target as CC_IEnumable<_TKey>
+        }
+
+        return _obj;
+    }
+})
 
 export function CC_IEnumList<_TKey extends pFlex.TKey, _TValue extends pFlex.TKey>(target: (any | Record<_TKey, _TValue>)[], deep: boolean = false): target is CC_IEnumList<_TKey, _TValue>[] {
     if(!target) return false;
