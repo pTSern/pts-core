@@ -15,7 +15,8 @@ const __pool__ = js.createMap(true);
 
 // Constants
 export const VOID_FUNC = () => void 0;
-export const ME_FUNC = _ => _;
+export const ME_FUNC = function(_: any) { return _ }
+export const ARRAY_FUNC = function() { return [] };
 
 export function getNumFunc(num: number) {
     num = typeof num == 'number' ? num : 0
