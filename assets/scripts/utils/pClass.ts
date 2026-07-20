@@ -4,7 +4,7 @@ import { DEV, EDITOR, EDITOR_NOT_IN_PREVIEW } from "cc/env";
 import * as pArray from "./pArray";
 import * as pConst from "./pConst";
 import * as cc from 'cc';
-import { CC_IEnumable } from "../interfaces/cc/CC.IEnumable";
+import { CC_IEnumable, CC_IEnumList } from "../interfaces/cc/CC.IEnumable";
 
 /**
  * pClass: All class-based patterns, binders, and decorators.
@@ -29,17 +29,29 @@ function _resolver(constructor: pFlex.TCtor) {
 
 // --- Foundation ---
 
-const _$list = [ 'AllComponents', 'NoneComponent', "cc.Component", "Exclude.cc.Component", "cc.Asset", "All" ] as const;
-export const EList = CC_IEnumable.generator(_$list);
-export type EList = (typeof _$list[number])
-const _$pool = js.createMap<Record<EList, Set<string>>>(true);
+const _$ccclasses = [ 'AllComponents', 'NoneComponent', "cc.Component", "Exclude.cc.Component", "cc.Asset", "All" ] as const;
+const _$types = ['cc.Node', 'Primitive', ..._$ccclasses] as const
+const _$primitives = ["CCString", 'CCInteger', "CCBoolean", 'CCFloat'] as const;
+export const ETypes = CC_IEnumable.generator(_$types);
+export type ETypes = (typeof _$types[number])
+export const EPrimitive = CC_IEnumable.generator(_$primitives);
+export type EPrimitive = (typeof _$primitives[number])
+export const CCEPrimitive = CC_IEnumList.generator(_$primitives);
 
-export function getAllCCClasses(type: EList = 'All'): Set<string> {
+export function getPrimitiveType(_type: EPrimitive) {
+    const type = cc[_type];
+    if(!type) return null
+    return { type, default: type.default }
+}
+
+const _$pool = js.createMap<Record<ETypes, Set<string>>>(true);
+
+export function getAllCCClasses(type: ETypes = 'All'): Set<string> {
     const _all = js._nameToClass;
 
     if(_$pool[type]) return _$pool[type];
 
-    for(const _key of _$list) {
+    for(const _key of _$ccclasses) {
         _$pool[_key] = new Set();
     }
 
