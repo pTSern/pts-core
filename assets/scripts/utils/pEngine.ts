@@ -1,10 +1,11 @@
 
-import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator } from "cc";
+import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator, serializeTag, deserialize } from "cc";
 import { DEBUG } from "cc/env";
 import { EDITOR } from "cc/env";
 import * as pArray from "./pArray";
 import * as pClass from './pClass';
 import * as pObject from "./pObject";
+import * as cc from 'cc'
 
 /**
  * pEngine: Comprehensive Cocos Creator engine utilities for Nodes, Components, and Assets.

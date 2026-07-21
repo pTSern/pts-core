@@ -1,4 +1,4 @@
-import { _decorator, Node, CCClass, Component, Enum, js, Asset } from 'cc';
+import { _decorator, Node, CCClass, Component, Enum, js, Asset, assetManager } from 'cc';
 import { pClass, pConst, pEngine } from '../../utils';
 import { Editor_Smart_SelfFocus } from '../../editor/Smart/Editor.Smart.SelfFocus';
 import { CC_EnumList } from '../../interfaces/cc/CC.IEnumable';
@@ -102,6 +102,19 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
                     const _ret = new Helper_Param_Creator();
                     _ret.filter = 'All';
                     _ret.type = type;
+
+                    if(pClass.isInheritedFrom(Asset, _class)) {
+                        assetManager.bundles.forEach(_ => {
+                            const _data = _.getAssetInfo(data);
+                            if(!_data) return;
+                            if(!_data['path']) return;
+
+                            _.load(_data['path'], (e, o) => {
+                                if(!e) _ret._data = o
+                            })
+                        })
+
+                    }
 
                     _total.push(_ret);
                     break;
