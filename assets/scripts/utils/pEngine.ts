@@ -1,7 +1,6 @@
 
-import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, DirectorEvent, _decorator, Button } from "cc";
+import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator } from "cc";
 import { DEBUG } from "cc/env";
-//import { IS_CACHED_ALL_NODES_N_COMPS, IS_CACHED_ALL_COMPS_ON_AFTER_SCENE_LAUNCH } from 'cc/userland/macro'
 import { EDITOR } from "cc/env";
 import * as pArray from "./pArray";
 import * as pClass from './pClass';
@@ -87,105 +86,120 @@ interface _INodeUtils {
     setPosition: <T extends IVec3Like>(target: TFlexCCNode, pos: TFlexPosition<T>, dif?: T) => void;
     getNodeInfo: (target: TFlexCCNode) => any;
     search: <T extends Component>(cls: pFlex.TCtor<any, T>, root?: Node) => T | null;
-    findNodeOrCompViaZid(uuid: string): Node | Component | null
+    lookup(uuid: string): Node | Component | null
     getAttr(target: pFlex.TFunc | object): Record<string, _IAttr>
 }
 
-const __pool_ = js.createMap<Record<string, Node | Component>>(true);
+const __$lookup_ = new Map<string, Node | Component>();
+const __$persistents_ = new Map<string, Node | Component>();
 
-
+const __$scenes_ = js.createMap<Record<string, Scene>>(true);
 
 if(DEBUG) {
-    window['__pool_'] = __pool_;
+    window['__pool_'] = __$lookup_;
 }
 
-//Object.values(DirectorEvent).forEach(_ => {
-//    director.once(_, (...args: any[]) => {
-//        console.log("DIRECTOR >> ONCE >>", _ , ...args)
-//    })
-//})
+director.on(Director.EVENT_BEFORE_SCENE_LAUNCH, function(_scene: Scene) {
+    for(const _key in __$scenes_) {
+        delete __$scenes_[_key];
+    }
 
-//if(IS_CACHED_ALL_COMPS_ON_AFTER_SCENE_LAUNCH) {
-//    director.once(Director.EVENT_BEFORE_SCENE_LAUNCH, function(_scene: Scene) {
-//        _scene.getComponentsInChildren(Component).forEach( _curr => __pool_[_curr.uuid] = _curr )
-//    })
-//}
+    __$scenes_[_scene.uuid] = _scene;
+    __$lookup_.clear();
 
-//const _destroyer = Node.prototype.destroy;
-//Node.prototype.destroy = function() {
-//    const _uuid = this.zid;
-//    const _out = _destroyer.call(this);
-//
-//    _out && ( delete __pool_[_uuid] )
-//
-//    return _out;
-//}
-//
-//const _remover = Component.prototype.destroy;
-//Component.prototype.destroy = function() {
-//    const _uuid = this.zid;
-//    const _out = _remover.call(this);
-//    _out && (delete __pool_[_uuid])
-//
-//    return _out;
-//}
+    _$add(_scene, __$lookup_);
+})
+
+
+function _$replacer<T = any, TKey extends keyof T = keyof T>(
+    target: pFlex.TCtor<any[], T>, 
+    method: TKey, 
+    before: pFlex.TFunc<[T, ...Parameters<Extract<T[TKey], (...args: any[]) => any>>]>,
+    after?: pFlex.TFunc<[T, ReturnType<Extract<T[TKey], (...args: any[]) => any>>]>,
+) {
+    const _$origin = target.prototype[method];
+    if (typeof _$origin !== 'function') return;
+
+    target.prototype[method] = function (this: T, ...args: any[]) {
+        before?.(this as any, ...args as any);
+        const _out = _$origin.apply(this, args);
+        after?.(this as any, _out);
+        return _out;
+    };
+}
+
+_$replacer(Director, 'reset', function(_this) {
+    const _per: Record<string, Node> = _this['_persistRootNodes']
+    if(!_per) return;
+    for(const _key in _per) {
+        __$persistents_.delete(_key);
+    }
+})
+
+_$replacer(Director, 'addPersistRootNode', function(_this, node) {
+    _$add(node, __$persistents_);
+})
+
+_$replacer(Director, 'removePersistRootNode', function(_this, node) {
+    __$persistents_.delete(node.uuid);
+})
+
+_$replacer(Node, '_onHierarchyChangedBase' as keyof Node, function(_this: Node, _old: Node) {
+    const _new = _this.parent;
+    if(!_old && _new) {
+        _$add(_this, __$lookup_);
+    } else if(_old && !_new) {
+        _$rem(_this, __$lookup_);
+    }
+} as never)
+
+_$replacer(Node, '_onPreDestroyBase' as keyof Node, function(_this: Node) {
+    if(__$lookup_.has(_this.uuid)) { _$rem( _this, __$lookup_ ); return }
+    if(__$persistents_.has(_this.uuid)) { _$rem( _this, __$persistents_ ); return }
+} as never)
+
+_$replacer(Node, 'addComponent', function(_this) {}, function(_this, _comp) {
+    _comp && (_comp.node._persistNode ? __$persistents_ : __$lookup_).set(_comp.uuid, _comp);
+})
+
+_$replacer(Component, '_onPreDestroy', function(_this) {
+    (_this.node._persistNode ? __$persistents_ : __$lookup_).delete(_this.uuid)
+})
+
+
+function _$rem(target: Node, pool: Map<string, Node | Component>) {
+    const _children = target.children;
+
+    for(const _child of _children) {
+        _$rem(_child, pool);
+    }
+
+    const _comps = target.components
+    for(const _comp of _comps) {
+        pool.delete(_comp.uuid);
+    }
+    (target._persistNode ? __$persistents_ : pool).delete(target.uuid);
+}
+
+function _$add(target: Node, pool: Map<string, Node | Component>) {
+    (target._persistNode ? __$persistents_ : pool).set(target.uuid, target);
+    const _comps = target.components;
+
+    for(const _comp of _comps) {
+        pool.set(_comp.uuid, _comp);
+    }
+
+    for(const _child of target.children) {
+        _$add(_child, pool);
+    }
+
+}
 
 export const NodeUtils = js.createMap<_INodeUtils>();
 
-//if(IS_CACHED_ALL_NODES_N_COMPS) {
-//    const _batcher = Node.prototype._onBatchCreated;
-//    Node.prototype._onBatchCreated = function(is) {
-//        __pool_[this.zid] = this
-//
-//        return _batcher.call(this, is);
-//    }
-//
-//    const _adder = Node.prototype.addComponent;
-//    Node.prototype.addComponent = function<_T extends Component>(type: string | pFlex.TCtor<any, _T>) {
-//        const _out: _T = _adder.call(this, type);
-//        !!_out && ( __pool_[_out.zid] = _out)
-//        return _out;
-//    }
-//
-//    NodeUtils.findNodeOrCompViaZid = function(uuid) {
-//        return __pool_[uuid];
-//    }
-//
-//} else {
-//    NodeUtils.findNodeOrCompViaZid = function(uuid) {
-//        let _out = __pool_[uuid];
-//
-//        if(!_out) {
-//            const _scene = director.getScene();
-//            if(!_scene) return null;
-//
-//            const _stack: Node[] = [_scene];
-//
-//            while(_stack.length > 0) {
-//                const _node = _stack.pop()!;
-//                __pool_[_node.zid] = _node;
-//
-//                if(_node.zid === uuid) {
-//                    return _node;
-//                }
-//
-//
-//                for(const _comp of _node.components) {
-//                    __pool_[_comp.zid] = _comp;
-//                    if(_comp.zid === uuid) {
-//                        return _comp;
-//                    }
-//                }
-//
-//                const _children = _node.children;
-//                for(let i = _children.length - 1; i >= 0; i--) {
-//                    _stack.push(_children[i])
-//                }
-//            }
-//        }
-//        return _out;
-//    }
-//}
+NodeUtils.lookup = function(uuid: string) {
+    return __$lookup_[uuid] ?? __$persistents_[uuid] ?? null
+}
 
 NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.TCtor[]): string[] {
     const _ctor = (typeof target === 'function' ? target : target.constructor) as any;
