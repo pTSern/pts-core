@@ -1,5 +1,5 @@
-import { _decorator, Node, CCClass, Component, Enum, js } from 'cc';
-import { pClass, pConst } from '../../utils';
+import { _decorator, Node, CCClass, Component, Enum, js, Asset } from 'cc';
+import { pClass, pConst, pEngine } from '../../utils';
 import { Editor_Smart_SelfFocus } from '../../editor/Smart/Editor.Smart.SelfFocus';
 import { CC_EnumList } from '../../interfaces/cc/CC.IEnumable';
 
@@ -67,6 +67,48 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
 
     get data(): any {
         return this._data;
+    }
+
+    static read(list: Helper_Param_Creator.IData[]) {
+        const _total: Helper_Param_Creator[] = [];
+        for(const _data of list) {
+            const { type, data } = _data;
+            if(!type) continue;
+
+            switch(type) {
+                case 'cc.Node': {
+                    const _ret = new Helper_Param_Creator();
+                    _ret.filter = 'cc.Node';
+                    if(data) _ret._data = Array.isArray(data) ? data.map(_ => pEngine.NodeUtils.lookup(_)) : pEngine.NodeUtils.lookup(data)
+                     else _ret._data = null
+                    _total.push(_ret);
+                    break;
+                }
+                case 'CCString':
+                case 'CCFloat':
+                case 'CCBoolean': {
+                    const _ret = new Helper_Param_Creator();
+                    _ret.filter = 'Primitive';
+                    _ret.type = type;
+                    _ret._data = data;
+
+                    _total.push(_ret);
+                    break;
+                }
+                default: {
+                    const _class = js.getClassByName(type);
+                    if(!_class) continue;
+
+                    const _ret = new Helper_Param_Creator();
+                    _ret.filter = 'All';
+                    _ret.type = type;
+
+                    _total.push(_ret);
+                    break;
+                }
+            }
+        }
+        return _total;
     }
 
     focus(): void {
@@ -172,7 +214,7 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
         }
     }
 
-    _extract(_: any) {
+    protected _extract(_: any) {
         switch(typeof _) {
             case 'undefined': return null
             case 'function': return null
@@ -180,6 +222,8 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
                 if(_ instanceof Node) {
                     return _.uuid;
                 } else if (_ instanceof Component) {
+                    return _.uuid
+                } else if(_ instanceof Asset) {
                     return _.uuid
                 } else {
                     if(!_) return null
@@ -197,7 +241,7 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
         }
     }
 
-    extract() {
+    protected _actUnTrustExtract() {
         const _obj: Helper_Param_Creator.IData = js.createMap();
         const _temp = Array.isArray(this.data) ? this.data.find(_ => _ !== null && _ !== undefined) : this.data
         if(Array.isArray(this.data)) {
@@ -241,6 +285,31 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
         }
 
         return _obj;
+    }
+
+    protected _actTrustExtract() {
+        const _obj: Helper_Param_Creator.IData = js.createMap();
+        if(Array.isArray(this.data)) {
+            _obj.data = this.data.map(_ => this._extract(_) );
+        } else {
+            _obj.data = this._extract(this.data);
+        }
+        switch(this._filter) {
+            case 'cc.Node': {
+                _obj.type = 'cc.Node'
+                break;
+            }
+            default: {
+                _obj.type = this.type;
+                break;
+            }
+        }
+
+        return _obj;
+    }
+
+    extract(trusted: boolean = true) {
+        return trusted ? this._actTrustExtract() : this._actUnTrustExtract();
     }
 
 }

@@ -1,5 +1,4 @@
-import { PlacementInfo } from "cc";
-import { pConst } from "../../utils";
+import * as pConst from "../../utils/pConst";
 
 export type CC_IEnumable<_TKey extends pFlex.TKey> = {
     __enums__: null;
