@@ -88,6 +88,7 @@ interface _INodeUtils {
     getNodeInfo: (target: TFlexCCNode) => any;
     search: <T extends Component>(cls: pFlex.TCtor<any, T>, root?: Node) => T | null;
     lookup(uuid: string): Node | Component | null
+    findNodeOrCompViaZid(ref: string | { zid?: string, uuid?: string }): Node | Component | null
     getAttr(target: pFlex.TFunc | object): Record<string, _IAttr>
 }
 
@@ -199,7 +200,49 @@ function _$add(target: Node, pool: Map<string, Node | Component>) {
 export const NodeUtils = js.createMap<_INodeUtils>();
 
 NodeUtils.lookup = function(uuid: string) {
-    return __$lookup_[uuid] ?? __$persistents_[uuid] ?? null
+    return __$lookup_.get(uuid) ?? __$persistents_.get(uuid) ?? null
+}
+
+function _decodeUuid(id: string): string {
+    try {
+        const _u = (assetManager as any).utils?.decodeUuid?.(id);
+        return _u || id;
+    } catch {
+        return id;
+    }
+}
+
+NodeUtils.findNodeOrCompViaZid = function(ref: string | { zid?: string, uuid?: string }) {
+    if (!ref) return null;
+
+    const _zid = typeof ref === 'string' ? ref : (ref.zid || ref.uuid || '');
+    const _uuid = typeof ref === 'string' ? '' : (ref.uuid || '');
+
+    // Candidate keys: raw ids plus their decoded (de-compressed) uuid form.
+    const _cands: string[] = [];
+    for (const _v of [_uuid, _zid]) {
+        if (!_v || _cands.includes(_v)) continue;
+        _cands.push(_v);
+        const _d = _decodeUuid(_v);
+        if (_d !== _v && !_cands.includes(_d)) _cands.push(_d);
+    }
+    if (!_cands.length) return null;
+
+    // 1) Direct registry hit by uuid key.
+    for (const _c of _cands) {
+        const _hit = __$lookup_.get(_c) ?? __$persistents_.get(_c);
+        if (_hit) return _hit;
+    }
+
+    // 2) Fallback: scan for an instance whose explicit zid/uuid matches.
+    for (const _pool of [__$lookup_, __$persistents_]) {
+        for (const _inst of _pool.values()) {
+            const _iz = (_inst as any).zid;
+            if ((_iz && _cands.includes(_iz)) || _cands.includes(_inst.uuid)) return _inst;
+        }
+    }
+
+    return null;
 }
 
 NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.TCtor[]): string[] {
