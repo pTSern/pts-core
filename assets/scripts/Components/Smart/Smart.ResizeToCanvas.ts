@@ -30,7 +30,7 @@ export class Smart_ResizeToCanvas extends Component {
         !EDITOR && this._resize();
     }
 
-    protected _smartF: pFlex.TFunc<[UITransform[], number, number]> = null
+    protected _$func: pFlex.TFunc<[UITransform[], number, number]> = null
 
     protected onLoad(): void {
         if(!sys.isBrowser) {
@@ -52,10 +52,11 @@ export class Smart_ResizeToCanvas extends Component {
     }
 
     protected _smart() {
-        this._smartF = this._isSmart ? (list, w, h) => list.forEach( _ => _.isValid && _?.node?.activeInHierarchy && !!_['_contenSize'] && _?.setContentSize(w, h) ) : (list, w, h) => list.forEach(_ => !!_['_contenSize'] && _?.setContentSize(w, h))
+        this._$func = this._isSmart ? (list, w, h) => list.forEach( _ => _.isValid && _?.node?.activeInHierarchy && !!_['_contentSize'] && _?.setContentSize(w, h) ) : (list, w, h) => list.forEach(_ => !!_['_contenSize'] && _?.setContentSize(w, h))
     }
 
     protected _resize() {
+
         const _rect = game.canvas;
         const _sx = view.getScaleX();
         const _sy = view.getScaleY();
@@ -69,7 +70,7 @@ export class Smart_ResizeToCanvas extends Component {
             _h = Math.max(_h, _ds.height);
         }
 
-        this._smartF(this._targets, _w, _h);
+        this._$func(this._targets, _w, _h);
     }
 
 }

@@ -19,7 +19,7 @@ export abstract class Helper_Selector_Base<_TObject> extends Editor_Smart_SelfFo
     intDefaultIndex: number = 0;
 
     protected _map: Record<string, _TObject> = js.createMap(true);
-    protected abstract _$ctor: pFlex.TCtor<any, _TObject>
+    protected _$ctor: pFlex.TCtor<any, _TObject>
 
     focus(): void {
         if(!this._$ctor) return;

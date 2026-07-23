@@ -38,6 +38,11 @@ export const EPrimitive = CC_IEnumable.generator(_$primitives);
 export type EPrimitive = (typeof _$primitives[number])
 export const CCEPrimitive = CC_IEnumList.generator(_$primitives);
 
+export function getClassName(filter: ETypes, type: string) {
+    if(filter == 'cc.Node') return filter
+    return type;
+}
+
 export function getPrimitiveType(_type: EPrimitive) {
     const type = cc[_type];
     if(!type) return null
