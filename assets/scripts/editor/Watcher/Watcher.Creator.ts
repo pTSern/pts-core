@@ -57,3 +57,5 @@ export function creator(_target: any, _out?: Watcher_Property<any>[]): Watcher_P
     return _out;
 
 }
+
+Watcher_Object.creator = creator;

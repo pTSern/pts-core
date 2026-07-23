@@ -1,10 +1,11 @@
 
 import { editor_ccclass, editor_property } from "db://pts-core/scripts/utils/pClass";
 import { Watcher_Property } from "./Watcher.Property"
-import { bridge } from './Watcher._Bridge'
 
 @editor_ccclass("Watcher_Object")
 export class Watcher_Object extends Watcher_Property<object>{
+
+    public static creator: (_target: any, _out?: Watcher_Property<any>[]) => Watcher_Property<any>[] = null;
 
     protected _value = null;
     @editor_property([Watcher_Property])
@@ -12,7 +13,9 @@ export class Watcher_Object extends Watcher_Property<object>{
 
     init(name: string, value: object): void {
         this.name = name;
-        this._values = bridge.create(value)
+        if (Watcher_Object.creator) {
+            this._values = Watcher_Object.creator(value);
+        }
     }
 
 }
