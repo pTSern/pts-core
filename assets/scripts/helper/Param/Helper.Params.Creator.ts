@@ -128,10 +128,7 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
                 this._onFocusClass();
                 break;
         }
-        this._onFocusApi?.();
     }
-
-    protected _onFocusApi?(): void
 
     private _onFocusNode(): void {
         CCClass.Attr.setClassAttr(this, '_data', 'type', 'Object');
