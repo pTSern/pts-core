@@ -30,7 +30,6 @@ export class Smart_ResizeToCanvas extends Component {
         !EDITOR && this._resize();
     }
 
-
     protected _smartF: pFlex.TFunc<[UITransform[], number, number]> = null
 
     protected onLoad(): void {
@@ -48,7 +47,7 @@ export class Smart_ResizeToCanvas extends Component {
         view.off('canvas-resize', this._resize, this);
     }
 
-    protected onEnable(): void {
+    protected start(): void {
         this._resize();
     }
 

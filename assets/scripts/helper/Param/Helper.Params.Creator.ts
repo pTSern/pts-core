@@ -14,19 +14,11 @@ export namespace Helper_Param_Creator {
 
 @ccclass('Helper_Param_Creator')
 export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
-    @property({  })
-    get log() { return false }
-    set log(x) {
-        if(!x) return;
-        console.log(JSON.stringify(this.extract(), null, 4))
-    }
     @property({})
     protected _filter: pClass.ETypes = 'cc.Component';
 
     @property({ type: pClass.ETypes })
-    get filter(): pClass.ETypes {
-        return this._filter;
-    }
+    get filter(): pClass.ETypes { return this._filter }
     set filter(x: pClass.ETypes) {
         if (this._filter === x) return;
         this._filter = x;
@@ -136,7 +128,10 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
                 this._onFocusClass();
                 break;
         }
+        this._onFocusApi?.();
     }
+
+    protected _onFocusApi?(): void
 
     private _onFocusNode(): void {
         CCClass.Attr.setClassAttr(this, '_data', 'type', 'Object');
@@ -226,6 +221,7 @@ export class Helper_Param_Creator extends Editor_Smart_SelfFocus {
             }
         }
     }
+
 
     protected _extract(_: any) {
         switch(typeof _) {
