@@ -22,14 +22,24 @@ export const Data_Manager = js.createMap<_$IManager>(true);
 
 const _$ = {
     version: pTS.bridge.get('config'),
-    container: pTS.bridge.get('game_data', () => js.createMap(true) ),
+    container: pTS.bridge.get('game_data', () => {
+        const _out = js.createMap(true) as any;
+        _out.energy_max = 5;
+        _out.energy_count = 0;
+        return _out;
+    } ),
     key: (_: string) => _$.version + _,
 
     storage: pTS.bridge.get('storage')
 }
 
+console.log("_$ >", _$)
+
 function _init() {
+    //Fetch all
 }
+
+_init();
 
 if(!_$.storage) {
     pTS.bridge.on('set', (_key, _value) => {
