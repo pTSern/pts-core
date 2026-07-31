@@ -96,7 +96,6 @@ export class UI_DualScroller_Controller extends Component {
     }
 
     protected _actScrollTo(page: number, duration?: number) {
-        console.log("_actScrollTo", page)
         if (this._pages.length === 0) return;
         duration = duration ?? this.numSnapDuration;
 
@@ -124,12 +123,14 @@ export class UI_DualScroller_Controller extends Component {
     protected bind(isOn: boolean) {
         const _method = isOn ? 'on' : 'off';
 
+        try {
         this.node[_method](Node.EventType.TOUCH_START, this._onTouchStart, this, true);
         this.node[_method](Node.EventType.TOUCH_MOVE, this._onTouchMove, this, true);
         this.node[_method](Node.EventType.TOUCH_END, this._onTouchEnd, this, true);
         this.node[_method](Node.EventType.TOUCH_CANCEL, this._onTouchEnd, this, true);
 
         this.bar?.[_method]('onIconClicked', { func: this._actScrollTo, binder: this })
+        } catch(e) {}
     }
 
     protected _onTouchStart(event: EventTouch) {
@@ -218,7 +219,6 @@ export class UI_DualScroller_Controller extends Component {
         this.bar?.actUpdateIcons(_target);
         this.indicator?.actUpdatePosition(_target);
 
-        console.log("TWEEN >> SNAP FROM: ", _last, " >> TO >>", _target)
         this._tween = tween(_obj)
             .to(duration,
                 { _offset },
@@ -248,7 +248,6 @@ export class UI_DualScroller_Controller extends Component {
     protected _actApplyOffset(offset: number) {
         if(this._intCurrentOffset === offset) return
         this._intCurrentOffset = offset;
-        console.log("_actApplyOffset", offset)
         const _length = this._pages.length;
 
         if(!_length || !this._numPageWidth) return;

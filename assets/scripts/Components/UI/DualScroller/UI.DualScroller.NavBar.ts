@@ -1,5 +1,5 @@
 
-import { _decorator, Node, tween, EventTouch } from 'cc';
+import { _decorator, Node, EventTouch } from 'cc';
 import { pConst } from '../../../utils';
 import { editor_property } from '../../../utils/pClass';
 import { UI_DualScroller_NavIcons } from './UI.DualScroller.NavIcons';
@@ -44,7 +44,7 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
         this.icon.actForEach( _ => {
             if(!_) return;
 
-            _.node.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
+            _?.node?.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
             _.node.on(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
         } )
     }
@@ -54,7 +54,7 @@ export class UI_DualScroller_NavBar extends Event_Driver<_Type> {
             this.icon.actForEach( _ => {
                 if(!_) return;
 
-                _.node.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
+                _?.node?.off(Node.EventType.TOUCH_END, this._onIconTouchEnd, this);
             })
         } catch(e) {}
     }
