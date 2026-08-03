@@ -1,5 +1,4 @@
-
-import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator, serializeTag, deserialize } from "cc";
+import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator, serializeTag, deserialize, CCObject } from "cc";
 import { DEBUG } from "cc/env";
 import { EDITOR } from "cc/env";
 import * as pArray from "./pArray";
@@ -15,13 +14,13 @@ import * as cc from 'cc'
 
 export interface IJsonOption { isAutoReleased: boolean; }
 interface IJsonData { sealed: boolean; listeners: pFlex.IBinder[]; options: IJsonOption; }
-const _map = new WeakMap<JsonAsset, IJsonData>();
+const _$map = new WeakMap<JsonAsset, IJsonData>();
 
 const _originJsonDestroyer = JsonAsset.prototype.destroy;
 JsonAsset.prototype.destroy = function() {
-    const data = _map.get(this);
+    const data = _$map.get(this);
     if (data?.options.isAutoReleased) {
-        _map.delete(this);
+        _$map.delete(this);
         assetManager.releaseAsset(this);
     }
     return _originJsonDestroyer.call(this);
@@ -29,39 +28,60 @@ JsonAsset.prototype.destroy = function() {
 
 function _get(asset: JsonAsset): IJsonData | undefined {
     if (!asset || !asset.isValid) return undefined;
-    let data = _map.get(asset);
+    let data = _$map.get(asset);
     if (!data) {
         data = { sealed: false, listeners: [], options: { isAutoReleased: false } };
-        _map.set(asset, data);
+        _$map.set(asset, data);
     }
     return data.sealed ? undefined : data;
 }
 
 interface _IJson {
-    add: (asset: JsonAsset, ...ls: pFlex.THandler[]) => void;
-    remove: (asset: JsonAsset, ...ls: pFlex.THandler[]) => void;
-    invoke: (asset: JsonAsset, ...args: any[]) => void;
+    add: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
+    remove: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
+    invoke: (asset: pFlex.TArray<JsonAsset>, ...args: any[]) => void;
     seal: (asset: pFlex.TArray<JsonAsset>, status: boolean) => void;
+    clean: (asset: pFlex.TArray<JsonAsset>) => void;
 }
 
 
 export const Json = js.createMap<_IJson>();
-Json.add = function(asset: JsonAsset, ...ls: pFlex.THandler[]) {
-    const d = _get(asset);
-    if (d) d.listeners.push(...pClass.mapper(ls));
-}
-
-Json.remove = function(asset: JsonAsset, ...ls: pFlex.THandler[]) {
-    const d = _get(asset);
-    if (d) {
-        const rem = pClass.mapper(ls);
-        d.listeners = d.listeners.filter(l => !rem.some(r => r.func === l.func && r.binder === l.binder));
+Json.add = function(asset, ...ls: pFlex.THandler[]) {
+    const _assets = pArray.flatter(asset);
+    const mappedLs = pClass.mapper(ls);
+    for(const _ret of _assets) {
+        const d = _get(_ret);
+        if (d) d.listeners.push(...mappedLs);
     }
 }
 
-Json.invoke = function(asset: JsonAsset, ...args: any[]) {
-    const d = _get(asset);
-    if (d) return pClass.emit(d.listeners, ...args);
+Json.remove = function(asset, ...ls: pFlex.THandler[]) {
+    const _assets = pArray.flatter(asset);
+    const rem = pClass.mapper(ls);
+    for(const _ret of _assets) {
+        const d = _get(_ret);
+        if (d) {
+            d.listeners = d.listeners.filter(l => !rem.some(r => r.func === l.func && r.binder === l.binder));
+        }
+    }
+}
+
+Json.clean = function(asset) {
+    const _assets = pArray.flatter(asset);
+    for(const _ret of _assets) {
+        const _out = _get(_ret);
+
+        if(!_out) continue;
+        _out.listeners.length = 0;
+    }
+}
+
+Json.invoke = function(asset, ...args: any[]) {
+    const _assets = pArray.flatter(asset);
+    for(const _ret of _assets) {
+        const d = _get(_ret);
+        if (d) return pClass.emit(d.listeners, ...args);
+    }
 }
 
 Json.seal = function(asset: pFlex.TArray<JsonAsset>, status: boolean) {
@@ -90,10 +110,12 @@ interface _INodeUtils {
     lookup(uuid: string): Node | Component | null
     findNodeOrCompViaZid(ref: string | { zid?: string, uuid?: string }): Node | Component | null
     getAttr(target: pFlex.TFunc | object): Record<string, _IAttr>
+    getLocalPosition<TPosition extends IVec3Like>(_self: TFlexCCNode, _target: TFlexPosition<TPosition>, _dif?: TPosition): cc.Vec3
 }
 
 const __$lookup_ = new Map<string, Node | Component>();
 const __$persistents_ = new Map<string, Node | Component>();
+const __$zidLookup_ = new Map<string, Node | Component>();
 
 const __$scenes_ = js.createMap<Record<string, Scene>>(true);
 
@@ -108,6 +130,7 @@ director.on(Director.EVENT_BEFORE_SCENE_LAUNCH, function(_scene: Scene) {
 
     __$scenes_[_scene.uuid] = _scene;
     __$lookup_.clear();
+    __$zidLookup_.clear();
 
     _$add(_scene, __$lookup_);
 })
@@ -144,6 +167,7 @@ _$replacer(Director, 'addPersistRootNode', function(_this, node) {
 
 _$replacer(Director, 'removePersistRootNode', function(_this, node) {
     __$persistents_.delete(node.uuid);
+    if ((node as any).zid) __$zidLookup_.delete((node as any).zid);
 })
 
 _$replacer(Node, '_onHierarchyChangedBase' as keyof Node, function(_this: Node, _old: Node) {
@@ -161,46 +185,107 @@ _$replacer(Node, '_onPreDestroyBase' as keyof Node, function(_this: Node) {
 } as never)
 
 _$replacer(Node, 'addComponent', function(_this) {}, function(_this, _comp) {
-    _comp && (_comp.node._persistNode ? __$persistents_ : __$lookup_).set(_comp.uuid, _comp);
+    if (!_comp) return;
+    const pool = _comp.node._persistNode ? __$persistents_ : __$lookup_;
+    pool.set(_comp.uuid, _comp);
+    if ((_comp as any).zid) __$zidLookup_.set((_comp as any).zid, _comp);
 })
 
 _$replacer(Component, '_onPreDestroy', function(_this) {
-    (_this.node._persistNode ? __$persistents_ : __$lookup_).delete(_this.uuid)
+    const pool = _this.node._persistNode ? __$persistents_ : __$lookup_;
+    pool.delete(_this.uuid);
+    if ((_this as any).zid) __$zidLookup_.delete((_this as any).zid);
 })
 
 
 function _$rem(target: Node, pool: Map<string, Node | Component>) {
     const _children = target.children;
-
     for(const _child of _children) {
         _$rem(_child, pool);
     }
 
-    const _comps = target.components
+    const targetPool = target._persistNode ? __$persistents_ : pool;
+    const _comps = target.components;
     for(const _comp of _comps) {
-        pool.delete(_comp.uuid);
+        targetPool.delete(_comp.uuid);
+        if ((_comp as any).zid) __$zidLookup_.delete((_comp as any).zid);
     }
-    (target._persistNode ? __$persistents_ : pool).delete(target.uuid);
+    targetPool.delete(target.uuid);
+    if ((target as any).zid) __$zidLookup_.delete((target as any).zid);
 }
 
 function _$add(target: Node, pool: Map<string, Node | Component>) {
-    (target._persistNode ? __$persistents_ : pool).set(target.uuid, target);
-    const _comps = target.components;
+    const targetPool = target._persistNode ? __$persistents_ : pool;
+    targetPool.set(target.uuid, target);
+    if ((target as any).zid) __$zidLookup_.set((target as any).zid, target);
 
+    const _comps = target.components;
     for(const _comp of _comps) {
-        pool.set(_comp.uuid, _comp);
+        targetPool.set(_comp.uuid, _comp);
+        if ((_comp as any).zid) __$zidLookup_.set((_comp as any).zid, _comp);
     }
 
     for(const _child of target.children) {
         _$add(_child, pool);
     }
-
 }
 
 export const NodeUtils = js.createMap<_INodeUtils>();
 
+const _tempVec3 = v3();
+const _tempWorldVec3 = v3();
+
+function _getPosition<_TPosition extends IVec3Like>(_position: _TPosition) {
+    const { x, y } = _position;
+    const z = 'z' in _position ? (_position as any).z : 0;
+    return { x, y, z };
+}
+
+function _extractPosition(target: TFlexPosition<IVec3Like>, outVec: cc.Vec3): { vec: cc.Vec3, isWorld: boolean } {
+    if (target instanceof Node) {
+        return { vec: outVec.set(target.worldPosition), isWorld: true };
+    }
+    if (pObject.isFlexKey(target)) {
+        const p = target as any;
+        if (p.node) {
+            return { vec: outVec.set((p.node as Node).worldPosition), isWorld: true };
+        }
+        if ('position' in p) {
+            const isWorld = 'isWorldPos' in p ? Boolean(p.isWorldPos) : false;
+            const { x, y, z = 0 } = p.position;
+            return { vec: outVec.set(x, y, z), isWorld };
+        }
+    }
+    const { x, y, z = 0 } = _getPosition(target as any);
+    return { vec: outVec.set(x, y, z), isWorld: false };
+}
+
+NodeUtils.getLocalPosition = function<TPosition extends IVec3Like>(_self: TFlexCCNode, _target: TFlexPosition<TPosition>, _dif?: TPosition): cc.Vec3 {
+    _self = _self instanceof Node ? _self : _self.node;
+    const { parent } = (_self as Node);
+    const dx = _dif?.x || 0;
+    const dy = _dif?.y || 0;
+    const dz = _dif?.z || 0;
+
+    if (!parent) return v3();
+
+    const { vec, isWorld } = _extractPosition(_target as any, _tempVec3);
+
+    if (parent instanceof Scene) {
+        return v3(vec.x + dx, vec.y + dy, vec.z + dz);
+    }
+
+    if (isWorld) {
+        const transform = CompUtils.get(parent, cc.UITransform);
+        const localPos = transform.convertToNodeSpaceAR(vec, _tempWorldVec3);
+        return v3(localPos.x + dx, localPos.y + dy, localPos.z + dz);
+    }
+
+    return v3(vec.x + dx, vec.y + dy, vec.z + dz);
+}
+
 NodeUtils.lookup = function(uuid: string) {
-    return __$lookup_.get(uuid) ?? __$persistents_.get(uuid) ?? null
+    return __$lookup_.get(uuid) ?? __$persistents_.get(uuid) ?? null;
 }
 
 function _decodeUuid(id: string): string {
@@ -218,7 +303,6 @@ NodeUtils.findNodeOrCompViaZid = function(ref: string | { zid?: string, uuid?: s
     const _zid = typeof ref === 'string' ? ref : (ref.zid || ref.uuid || '');
     const _uuid = typeof ref === 'string' ? '' : (ref.uuid || '');
 
-    // Candidate keys: raw ids plus their decoded (de-compressed) uuid form.
     const _cands: string[] = [];
     for (const _v of [_uuid, _zid]) {
         if (!_v || _cands.includes(_v)) continue;
@@ -228,13 +312,13 @@ NodeUtils.findNodeOrCompViaZid = function(ref: string | { zid?: string, uuid?: s
     }
     if (!_cands.length) return null;
 
-    // 1) Direct registry hit by uuid key.
+    // 1) Direct registry hit by uuid or zid (O(1))
     for (const _c of _cands) {
-        const _hit = __$lookup_.get(_c) ?? __$persistents_.get(_c);
+        const _hit = NodeUtils.lookup(_c) ?? __$zidLookup_.get(_c);
         if (_hit) return _hit;
     }
 
-    // 2) Fallback: scan for an instance whose explicit zid/uuid matches.
+    // 2) Fallback linear scan if zid was assigned dynamically after node creation
     for (const _pool of [__$lookup_, __$persistents_]) {
         for (const _inst of _pool.values()) {
             const _iz = (_inst as any).zid;
@@ -245,14 +329,20 @@ NodeUtils.findNodeOrCompViaZid = function(ref: string | { zid?: string, uuid?: s
     return null;
 }
 
+const __$ccPropsCache = new WeakMap<Function, string[]>();
+
 NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.TCtor[]): string[] {
     const _ctor = (typeof target === 'function' ? target : target.constructor) as any;
-    let _props = _ctor.__props__ ?? _ctor.prototype?.__props__ ?? [];
+    let _props = __$ccPropsCache.get(_ctor);
+    if (!_props) {
+        _props = _ctor.__props__ ?? _ctor.prototype?.__props__ ?? [];
+        if (!Array.isArray(_props)) _props = [];
+        __$ccPropsCache.set(_ctor, _props);
+    }
 
-    if (!Array.isArray(_props)) return [];
-    if (types.length > 0) {
+    if (types.length > 0 && _props.length > 0) {
         const attrs = CCClass.Attr.getClassAttrs(_ctor);
-        _props = _props.filter(p => {
+        return _props.filter(p => {
             const cp = attrs[`${p}${CCClass.Attr.DELIMETER}ctor`];
             return cp && types.some(t => t === cp || cp.prototype instanceof t);
         });
@@ -283,18 +373,18 @@ NodeUtils.create = function<T extends pFlex.TCtor<any, any>[]>(opt: { name?: str
 
 NodeUtils.setPosition = function<T extends IVec3Like>(target: TFlexCCNode, pos: TFlexPosition<T>, dif?: T) {
     const node = target instanceof Node ? target : target.node;
-    const off = dif ?? { x: 0, y: 0, z: 0 };
-    if (pos instanceof Node) { node.setWorldPosition(v3(pos.worldPosition.x + (off.x || 0), pos.worldPosition.y + (off.y || 0), pos.worldPosition.z + (off.z || 0))); return; }
-    if (pObject.isFlexKey(pos)) { const p = pos as any; if (p.node) { node.setWorldPosition(v3(p.node.worldPosition.x + (off.x || 0), p.node.worldPosition.y + (off.y || 0), p.node.worldPosition.z + (off.z || 0))); return; } }
-    const p = pos as any;
-    if ('position' in p && 'isWorldPos' in p) {
-        const { x, y, z = 0 } = p.position;
-        const f = v3(x + (off.x || 0), y + (off.y || 0), z + (off.z || 0));
-        p.isWorldPos ? node.setWorldPosition(f) : node.setPosition(f);
-        return;
+    const dx = dif?.x || 0;
+    const dy = dif?.y || 0;
+    const dz = dif?.z || 0;
+
+    const { vec, isWorld } = _extractPosition(pos as any, _tempVec3);
+    const targetVec = _tempWorldVec3.set(vec.x + dx, vec.y + dy, vec.z + dz);
+
+    if (isWorld) {
+        node.setWorldPosition(targetVec);
+    } else {
+        node.setPosition(targetVec);
     }
-    const { x, y, z = 0 } = p;
-    node.setPosition(x + (off.x || 0), y + (off.y || 0), z + (off.z || 0));
 }
 
 NodeUtils.getNodeInfo = function(target: TFlexCCNode): any {
@@ -308,7 +398,6 @@ NodeUtils.search = function<T extends Component>(cls: pFlex.TCtor<any, T>, root?
 }
 
 NodeUtils.getAttr = function(target) {
-
     const _attr = CCClass.Attr.getClassAttrs(target);
     const _out = {}
 
@@ -336,19 +425,16 @@ interface _ICompUtils {
     get: <T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T>) => T;
     binds: (target: Component, key: string, binder: Component, handler: string) => void;
     appends: (events: pFlex.TArray<IEventBinders>) => void;
-
     removes(target: pFlex.TArray<TFlexTarget>, type: pFlex.TArray<_TComp>, ...types: _TComp[]): void
-
-    //actBindBtn(target: pFlex.TArray<Button>, method: pFlex.TFunc<[Button], void>, binder?: any): void
+    isOnLoaded(target: Component): boolean
 }
 
-export const CompUtils = js.createMap<_ICompUtils>(); 
-//CompUtils.actBindBtn = function(target, method, binder) {
-//    const _btns = pArray.flatter(target).filter(_ => !!_ && _.isValid && !!_.node && !_.node.isValid);
-//
-//    _btns.forEach(_ => _.node.on(Button.EventType.CLICK))
-//
-//}
+
+export const CompUtils = js.createMap<_ICompUtils>();
+
+CompUtils.isOnLoaded = function(target: Component) {
+    return Boolean(target && ((target as any)._objFlags & CCObject.Flags.IsOnLoadCalled));
+}
 
 CompUtils.removes = function(t, e, ...es) {
     es = pArray.flat(e, es).map(_ => typeof _ === 'string' ? js.getClassByName(_) : _);
@@ -373,9 +459,7 @@ CompUtils.removes = function(t, e, ...es) {
                 }
             }
         })
-
     }
-
 }
 
 CompUtils.awake = function(comp: Component) {
@@ -399,16 +483,25 @@ CompUtils.binds = function(target: Component, key: string, binder: Component, ha
 }
 
 CompUtils.appends = function(events: pFlex.TArray<IEventBinders>) {
-    pArray.flatter(events).forEach(config => {
-        pArray.flatter(config._options).forEach(opt => {
+    const configs = pArray.flatter(events);
+    for (let i = 0; i < configs.length; ++i) {
+        const config = configs[i];
+        const options = pArray.flatter(config._options);
+        const types = pArray.flatter(config._type);
+        for (let j = 0; j < options.length; ++j) {
+            const opt = options[j];
             const targets = pArray.flatter(opt._target);
             const handlers = pArray.flatter(opt._handlers);
-            const types = pArray.flatter(config._type);
-            targets.forEach(t => {
+            for (let k = 0; k < targets.length; ++k) {
+                const t = targets[k];
                 const n = t instanceof Node ? t : t.node;
-                handlers.forEach(h => types.forEach(type => n.on(type as any, h, config._binder, opt._capture)));
-            });
-        });
-    });
+                for (let m = 0; m < handlers.length; ++m) {
+                    const h = handlers[m];
+                    for (let nIdx = 0; nIdx < types.length; ++nIdx) {
+                        n.on(types[nIdx] as any, h, config._binder, opt._capture);
+                    }
+                }
+            }
+        }
+    }
 }
-
