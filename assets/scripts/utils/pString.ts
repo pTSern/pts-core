@@ -2,6 +2,8 @@
 import * as pArray from "./pArray";
 import { randomRangeInt, js } from 'cc'
 
+const _$regex = /\{\{|\}\}|\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g;
+const _$match = /^([a-zA-Z])(\d+)?$/;
 
 /**
  * pString: String manipulation and formatting.
@@ -102,4 +104,90 @@ export function replace(root: string, replacements: pFlex.TArray<IStringReplacer
 export function extractNumbers(str: string): number[] {
     const matches = str.match(/\d+/g);
     return matches ? matches.map(Number) : [];
+}
+
+export function format(format: string, ...args: any[]) {
+    if(!format) return "";
+
+    return format.replace(_$regex, (_match, _idx, _align, _format) => {
+        if(_match === "{{") return "{"
+        if(_match === "}}") return "}"
+
+        const _index = parseInt(_idx, 10);
+        if(_index < 0 || _index >= args.length) {
+            return _match;
+        }
+
+        const _value = args[_index];
+        let _rs = _$format(_value, _format);
+
+        if(_align) {
+            const _alignment = parseInt(_align, 10);
+            _rs = _alignment > 0 ? _rs.padStart(_alignment, ' ') : _alignment < 0 ? _rs.padEnd(Math.abs(_alignment), " ") : _rs;
+        }
+
+        return _rs;
+    })
+}
+
+function _$format(value: any, specifier?: string): string {
+    if(value === null || value === undefined) return "";
+    if(!specifier) return String(value);
+
+    const _match = specifier.match(_$match);
+    if(!_match) return String(value);
+
+    const _code = _match[1];
+    const _precision = _match[2] !== undefined ? parseInt(_match[2], 10) : undefined;
+    const _num = Number(value);
+
+    if(isNaN(_num)) return String(value);
+
+    switch(_code) {
+        case 'D':
+        case 'd': {
+            const _digits = _precision ?? 1;
+            const _negative = _num < 0;
+            const _abs = Math.abs(Math.trunc(_num)).toString().padStart(_digits, '0');
+            return _negative ? `-${_abs}` : _abs;
+        }
+        case 'F':
+        case 'f': {
+            const _decimals = _precision ?? 2;
+            return _num.toFixed(_decimals);
+        }
+        case 'N':
+        case 'n': {
+            const _decimals = _precision ?? 2;
+            return _num.toLocaleString('en-US', {
+                minimumFractionDigits: _decimals,
+                maximumFractionDigits: _decimals
+            })
+        }
+        case 'C':
+        case 'c': {
+            const _decimals = _precision ?? 2;
+            return _num.toLocaleString('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: _decimals,
+                maximumFractionDigits: _decimals
+            })
+        }
+        case 'X':
+        case 'x': {
+            const _digits = _precision ?? 1;
+            let _hex = Math.floor(_num).toString(16);
+            if(_code === 'X') _hex = _hex.toUpperCase();
+            return _hex.padStart(_digits, '0');
+        }
+        case 'P':
+        case 'p': {
+            const _decimals = _precision ?? 2;
+            return `${(_num * 100).toFixed(_decimals)}%`;
+        }
+        default: {
+            return String(value);
+        }
+    }
 }
