@@ -10,12 +10,18 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
     @property({ readonly: true, visible: true })
     protected _filter: string = "cc.Component"
 
+    @property({ readonly: true, visible() { return this._max > 0 } })
+    protected _max: number = 0;
+
     @property({ type: CCObject })
     protected _list: _TObject[] = []
     @property({ type: CCObject })
     get list() { return this._list }
     set list(x) {
         this._list = x;
+        if(this._max > 0 && this._list.length > this._max) {
+            this._list.length = this._max
+        }
         this.focus();
     }
 
@@ -24,6 +30,10 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
     set(type: string) {
         this._filter = type;
+    }
+
+    max(max: number) {
+        this._max = max;
     }
 
     static lazy<_TObject>(type: string) {
@@ -72,7 +82,7 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
     protected _key: pFlex.TFunc<[_TObject], string> = _ => typeof _['name'] == 'string' ? _['name'] : String(_)
 
-    get(index: number | string) {
+    get(index: number | string): _TObject | null {
         if(typeof index == 'number') return this._list[index];
         if(typeof index == 'string') return this._map[index];
         return null;
