@@ -1,4 +1,4 @@
-import { _decorator, CCClass, JsonAsset } from 'cc';
+import { _decorator, CCClass, js, JsonAsset } from 'cc';
 import { CC_EnumList } from '../interfaces/cc/CC.IEnumable';
 import { Editor_Smart_SelfFocus } from '../editor/Smart/Editor.Smart.SelfFocus';
 import { pConst } from '../utils';
@@ -8,7 +8,7 @@ const { ccclass, property } = _decorator;
 @ccclass('Helper_IdSelector')
 export class Helper_IdSelector extends Editor_Smart_SelfFocus {
     @property({ visible() { return pConst.EDITOR_ONLY_IN_PREVIEW }, readonly: true, group: pConst.GROUPS.DEBUGGER })
-    protected _sid: string = ""
+    protected _sid: string = js.IDGenerator.global.getNewId();
 
     @property({ group: pConst.GROUPS.CORE  })
     get sid() { return this._sid }
