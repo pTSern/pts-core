@@ -23,7 +23,7 @@ export function shift(arr: number[], vcenter: number): number[] {
  */
 export function flat<T>(target: pFlex.TArray<T>, targets: T[]): T[] {
     if (target === undefined && targets.length <= 0) return [];
-    return [target as any].concat(targets);
+    return (Array.isArray(target) ? target : [target as T]).concat(targets);
 }
 
 /**
