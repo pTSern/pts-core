@@ -40,6 +40,6 @@ export class Editor_PleaseOverride extends Component {
 
     resetInEditor(didResetToDefault?: boolean): void {
         this._$check();
-        this._onResetInEditor(didResetToDefault);
+        this._onResetInEditor?.(didResetToDefault);
     }
 }

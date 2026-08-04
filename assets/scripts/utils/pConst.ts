@@ -48,21 +48,29 @@ export const KEYS = {
     }
 };
 
+const _$pool = js.createMap();
+
 export const GROUPS = {
-    CORE: { name: "Core", id: "0", displayOrder: 1000 },
-    DEBUGGER: { name: "Debug", id: "0" },
-    UI: { name: "UI", id: "0" },
-    AUDIO: { name: "Audio", id: "0" },
-    ANIM: { name: "Anim", id: "0" },
-    EDITOR: { name: "Editor", id: "0", displayOrder: 999 },
-    CONTENT: { name: "Content", id: "0", displayOrder: 999 },
-    EVENT: { name: "Event", id: "0" },
-    HELPER: { name: "Helper", id: "0" },
-    OPTION: { name: "Option", id: "0", displayOrder: 2000 },
-    CONFIG: { name: "Config", id: "0" },
-    DETAIL: { name: "Detail", id: "0" },
-    
-    get: (name: string, id: string = "0") => ({ name, id })
+    CORE:       { name: "Core", id: "9", displayOrder: 1000 },
+    DEBUGGER:   { name: "Debug", id: "9" },
+    UI:         { name: "UI", id: "9" },
+    AUDIO:      { name: "Audio", id: "9" },
+    ANIM:       { name: "Anim", id: "9" },
+    EDITOR:     { name: "Editor", id: "9", displayOrder: 999 },
+    CONTENT:    { name: "Content", id: "9", displayOrder: 999 },
+    EVENT:      { name: "Event", id: "9" },
+    HELPER:     { name: "Helper", id: "9" },
+    OPTION:     { name: "Option", id: "9", displayOrder: 2000 },
+    CONFIG:     { name: "Config", id: "9" },
+    DETAIL:     { name: "Detail", id: "9" },
+
+    get: (name: string, id: string = "9", displayOrder: number = 1) => {
+        const _sid = `${name}_${id}`;
+        if(_$pool[_sid]) return _$pool[_sid];
+
+        _$pool[_sid] = { name, id, displayOrder }
+        return _$pool[_sid]
+    }
 };
 
 export const LINE = "---------------------------------------------------------------";
