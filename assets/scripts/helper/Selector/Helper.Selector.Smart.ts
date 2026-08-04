@@ -22,6 +22,16 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
     @property({ type: CCInteger, min: 0, max: 1, step: 1, slide: true, group: pConst.GROUPS.CORE })
     intDefaultIndex: number = 0;
 
+    set(type: string) {
+        this._filter = type;
+    }
+
+    static lazy<_TObject>(type: string) {
+        const _ret = new Helper_Selector_Smart<_TObject>();
+        _ret._filter = js.getClassName(type);
+        return _ret;
+    }
+
     static create<_TObject>(filter: pFlex.TCtor<any, _TObject>, key: pFlex.TFunc<[_TObject], string>) {
         const _ret = new Helper_Selector_Smart();
         _ret._filter = js.getClassName(filter);
@@ -36,11 +46,18 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
         const _ctor = js.getClassByName(this._filter);
         if(!_ctor) return;
 
+        for(let i = 0; i < this._list.length; i ++) {
+            const _ret = this._list[i];
+            if(_ret !== null && _ret instanceof _ctor) continue;
+            this._list[i] = new _ctor() as _TObject;
+        }
+
         const _max = Math.max(0, this._list.length - 1);
         CCClass.Attr.setClassAttr(this, 'intDefaultIndex', 'max', _max);
 
         CCClass.Attr.setClassAttr(this, 'list', 'ctor', _ctor);
         CCClass.Attr.setClassAttr(this, '_list', 'ctor', _ctor);
+
         this._onFocus?.();
     }
 
