@@ -130,6 +130,16 @@ export function format(format: string, ...args: any[]) {
     })
 }
 
+/**
+ * Convert strings to PascalCase (capitalize first letter of each word, lowercase rest).
+ * Time: O(n) per string.
+ */
+export function pascal(...str: string[]): string[] {
+    return str.map(s =>
+        s.replace(/(\S)(\S*)/g, (_, first, rest) => first.toUpperCase() + rest.toLowerCase())
+    );
+}
+
 function _$format(value: any, specifier?: string): string {
     if(value === null || value === undefined) return "";
     if(!specifier) return String(value);

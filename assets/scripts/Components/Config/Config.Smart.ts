@@ -18,6 +18,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
     @property({})
     protected _filter: pClass.ETypes = 'cc.Node';
     protected _$lock: boolean = false;
+    protected _$max: number = 0;
 
     @property({ type: pClass.ETypes })
     get filter(): pClass.ETypes { return this._filter }
@@ -42,7 +43,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
     protected _key: string = 'name'
 
     @property({ type: Helper_Selector_Smart })
-    target = new Helper_Selector_Smart();
+    target = new Helper_Selector_Smart<_TObject>();
 
     get id(): string {
         return this.hid.sid;
@@ -72,6 +73,10 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         CCClass.Attr.setClassAttr(this, 'type', 'readonly', this._$lock);
         CCClass.Attr.setClassAttr(this, 'filter', 'readonly', this._$lock);
 
+        if(this._$max > 0) {
+            this.target.max(this._$max)
+        }
+
         switch(this._filter) {
             case 'cc.Node': break;
             case 'Primitive': {
@@ -91,7 +96,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         this.target.key(this._key);
     }
 
-    get(index: number | string = 0) {
+    get(index: number | string = 0): _TObject {
         return this.target.get(index);
     }
 }
