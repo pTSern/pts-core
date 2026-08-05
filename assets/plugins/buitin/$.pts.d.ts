@@ -48,6 +48,6 @@ declare namespace pTS {
             ? _TTarget & (_TAssign extends false ? _IListener<__TInterfaces_> : IDriver<__TInterfaces_>)
             : _IEventify<__TInterfaces_>;
 
-        export function cache(): {};
+        export function cache(): Record<string, any>;
     }
 }

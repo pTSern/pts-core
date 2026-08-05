@@ -29,20 +29,21 @@ if(_$) {
                     _.get = async function(what, creator) {
                         const _key = opt.key_getter(what);
                         let _data = await opt.asynctify.get(_key, _container);
-    
+
                         if(typeof _data == 'undefined' && typeof creator == 'function') {
                             _data = creator(_container, _key);
-    
-                            _.set(_key, _data);
+
+                            opt.asynctify.set(_key, _data, _container);
+                            _$emiter('set', _key, _data);
                         }
                         _$emiter('get', _key, _data)
                         return _data;
                     }
-    
+
                 } else {
                     _.set = function(what, value) {
                         const _out = opt.asynctify.set(what, value, _container);
-                        _$emiter('set', what, _data)
+                        _$emiter('set', what, value)
                         return _out;
                     };
     
@@ -69,11 +70,14 @@ if(_$) {
     
             _.get = function(what, creator = undefined) {
                 let _out = _container.get(what);
-                if(typeof _out == 'undefined' && typeof creator == 'function') {
-                    _out = creator(_container, what);
+                if(typeof _out == 'undefined') {
+                    _out = typeof creator == 'function'
+                        ? creator(_container, what)
+                        : Object.create(null);
                     _container.set(what, _out);
+                    _$emiter('set', what, _out);
                 }
-                _$emiter('set', what, _out);
+                _$emiter('get', what, _out);
                 return _out;
             }
 
@@ -91,11 +95,11 @@ if(_$) {
                 _.get = async function(what, creator) {
                     const _key = opt.key_getter(what);
                     let _data = await opt.asynctify.get(_key, _container);
-    
+
                     if(typeof _data == 'undefined' && typeof creator == 'function') {
                         _data = creator(_container, _key);
-    
-                        _.set(_key, _data);
+
+                        opt.asynctify.set(_key, _data, _container);
                     }
                     return _data;
                 }
@@ -129,7 +133,7 @@ if(_$) {
             _.get = function(what, creator = undefined) {
                 const _key = opt.key_getter(what);
                 let _out = _container.get(_key);
-                if(!_out && creator) {
+                if(typeof _out == 'undefined' && typeof creator == 'function') {
                     _out = creator(_container, _key);
                     _container.set(_key, _out);
                 }
