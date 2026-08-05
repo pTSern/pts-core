@@ -12,12 +12,21 @@ type _$TStatus = 'pending' | 'done' | 'failed'
 interface _$IManager {
     init(data: _$IGameData): Promise<boolean>
 
+    // Single key get
     get<_TKey extends _$TKey>(key: _TKey): _$IGameData[_TKey]
-    gets<_TKeys extends _$TKey[]>(...keys: _TKeys): { [K in _TKeys[number]]: _$IGameData[K] }
+    // Bulk keys get
+    get<_TKeys extends _$TKey[]>(...keys: _TKeys): { [K in _TKeys[number]]: _$IGameData[K] }
+    get<_TKeys extends _$TKey[]>(keys: _TKeys): { [K in _TKeys[number]]: _$IGameData[K] }
 
+    // Single key set
     set<_TKey extends _$TKey>(key: _TKey, value: pFlex.TFunc<[_$IGameData], _$IGameData[_TKey]>): Promise<_$IGameData[_TKey]>
     set<_TKey extends _$TKey>(key: _TKey, value: _$IGameData[_TKey]): Promise<_$IGameData[_TKey]>
-    sets<T extends readonly ({ [K in _$TKey]: { key: K; value: _$IGameData[K] } }[_$TKey])[]>(...data: T): Promise<{ [P in keyof T]: T[P] extends { key: infer K extends _$TKey } ? _$IGameData[K] : never }>
+
+    // Variadic key-value set overloads
+    set<K1 extends _$TKey, K2 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2]): Promise<void>
+    set<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3]): Promise<void>
+    set<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey, K4 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3], k4: K4, v4: _$IGameData[K4]): Promise<void>
+    set<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey, K4 extends _$TKey, K5 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3], k4: K4, v4: _$IGameData[K4], k5: K5, v5: _$IGameData[K5]): Promise<void>
 
     all(_async?: false): _$IGameData
     all(_async: true): Promise<_$IGameData>
@@ -38,7 +47,7 @@ const _$ = {
     status: 'pending' as _$TStatus,
 }
 
-const _$pstorage: Promise<any> = new Promise(resolve => {
+const _$storage: Promise<any> = new Promise(resolve => {
     if (_$.storage?.set) {
         resolve(_$.storage);
     } else {
@@ -52,9 +61,9 @@ const _$pstorage: Promise<any> = new Promise(resolve => {
     }
 });
 
-let _$waitter: ((value: boolean) => void) | null = null;
-const _$promise = new Promise<boolean>(resolve => {
-    _$waitter = resolve;
+let _$waiter: ((value: boolean) => void) | null = null;
+const _$waitPromise = new Promise<boolean>(resolve => {
+    _$waiter = resolve;
 });
 
 async function _$persist<_TKey extends _$TKey>(key: _TKey, value: _$IGameData[_TKey]) {
@@ -71,39 +80,81 @@ async function _$persist<_TKey extends _$TKey>(key: _TKey, value: _$IGameData[_T
     }
 }
 
-Data_Manager.get = function(what) {
-    const _out = _$.container[what];
-    DEV && console.log("[Data_Manager].{get} Log: \n\tParams: ", what, "\n\tOut: ", _out, "\n\tOrigin: ", _$.container);
+function _$gone(key: string) {
+    const _out = _$.container[key as _$TKey];
+    DEV && console.log("[Data_Manager].{get} Log: \n\tParams: ", key, "\n\tOut: ", _out, "\n\tOrigin: ", _$.container);
     return _out;
 }
 
-Data_Manager.gets = function(...keys) {
+function _$gbulk(keysList: string[]) {
     const _obj = js.createMap();
+    for (const key of keysList) {
+        _obj[key] = _$.container[key as _$TKey];
+    }
+    DEV && console.log("[Data_Manager].{get bulk} Log: \n\tParams: ", ...keysList, "\n\tOut: ", _obj, "\n\tOrigin: ", _$.container);
+    return _obj;
+}
 
-    for (const key of keys) {
-        _obj[key] = _$.container[key];
+Data_Manager.get = function(what: any, ...rest: any[]) {
+    if (_$.status !== 'done') {
+        return Data_Manager.wait().then(() => {
+            return Data_Manager.get(what, ...rest);
+        });
     }
 
-    DEV && console.log("[Data_Manager].{gets} Log: \n\tParams: ", ...keys, "\n\tOut: ", _obj, "\n\tOrigin: ", _$.container);
-    return _obj as ReturnType<_$IManager['gets']>;
-}
+    if (Array.isArray(what) || rest.length > 0) {
+        const keysList = Array.isArray(what) ? what : [what, ...rest];
+        return _$gbulk(keysList);
+    }
 
-Data_Manager.set = async function<_TKey extends _$TKey>(k: _TKey, v: _$IGameData[_TKey] | pFlex.TFunc<[_$IGameData], _$IGameData[_TKey]>) {
-    const _container = _$.container;
-    const _val = typeof v === 'function' ? v(_container) : v;
+    return _$gone(what);
+} as any;
 
-    _container[k] = _val;
-    await _$persist(k, _val);
+Data_Manager.set = async function(...args: any[]) {
+    if (_$.status !== 'done') {
+        await Data_Manager.wait();
+    }
 
-    return _val;
-}
+    const _container = _$.container as any;
+
+    if (args.length === 2) {
+        const k = args[0] as _$TKey;
+        const v = args[1];
+        const _val = typeof v === 'function' ? v(_container) : v;
+
+        _container[k] = _val;
+        await _$persist(k, _val);
+        return _val;
+    }
+
+    if (args.length % 2 !== 0) {
+        DEV && console.error("[Data_Manager] set expected key-value pairs (even argument count), got:", args.length);
+    }
+
+    const _prm: Promise<any>[] = [];
+    for (let i = 0; i < args.length - 1; i += 2) {
+        const k = args[i] as _$TKey;
+        const v = args[i + 1];
+        if (k == null) continue;
+
+        const _val = typeof v === 'function' ? v(_container) : v;
+        _container[k] = _val;
+        _prm.push(_$persist(k, _val));
+    }
+
+    await Promise.all(_prm);
+} as any;
 
 Data_Manager.init = async function(data) {
+    if (_$.status === 'done') {
+        return true;
+    }
+
     const _container = _$.container;
 
     // 1. Wait for storage ready (with a 3s timeout fallback in case storage is omitted)
     const timeout = new Promise<null>(res => setTimeout(() => res(null), 3000));
-    const storage = await Promise.race([_$pstorage, timeout]);
+    const storage = await Promise.race([_$storage, timeout]);
 
     // 2. Load stored data or seed default values concurrently
     if (storage?.get) {
@@ -115,16 +166,12 @@ Data_Manager.init = async function(data) {
 
         const _writers: Promise<any>[] = [];
 
-        console.group("[Data_Manager] Init with storage:", storage);
-        console.log("Keepers:", _keepers);
         for (let i = 0; i < keys.length; i++) {
-            const _key = keys[i]
-            const _val = _keepers[i];
+            const _key = keys[i];
+            const storedVal = _keepers[i];
 
-            console.log("Get from storage:", _key, "=>", _val, " | ", data[_key]);
-            if (_val !== undefined && _val !== null) {
-
-                _container[_key] = _val;
+            if (storedVal !== undefined && storedVal !== null) {
+                _container[_key] = storedVal;
             } else {
                 _container[_key] = data[_key];
                 if (storage.set) {
@@ -135,12 +182,10 @@ Data_Manager.init = async function(data) {
             }
         }
 
-        console.groupEnd();
-
+        // Bulk parallel write for missing default keys
         if (_writers.length > 0) {
             await Promise.all(_writers);
         }
-
     } else {
         for (const _key in data) {
             if (_container[_key] === undefined) {
@@ -150,10 +195,13 @@ Data_Manager.init = async function(data) {
     }
 
     _$.status = 'done';
-    if (_$waitter) {
-        _$waitter(true);
-        _$waitter = null;
+    if (_$waiter) {
+        _$waiter(true);
+        _$waiter = null;
     }
+
+    // Init runs once: override init with one-shot instant resolver
+    Data_Manager.init = async () => true;
 
     return true;
 }
@@ -169,28 +217,11 @@ Data_Manager.all = function(_async: boolean = false) {
 Data_Manager.wait = function() {
     if (_$.status === 'done') return Promise.resolve(true);
     if (_$.status === 'failed') return Promise.resolve(false);
-    return _$promise;
+    return _$waitPromise;
 }
 
 Data_Manager.status = function() {
     return _$.status;
-}
-
-//@ts-ignore
-Data_Manager.sets = function(...keys) {
-    const _container = _$.container;
-    const _prm: Promise<any>[] = [];
-    const items = (keys.length === 1 && Array.isArray(keys[0])) ? keys[0] : keys;
-
-    for (const _ret of items) {
-        const { key, value } = _ret;
-        if (key == null) continue;
-
-        _container[key as string] = value;
-        _prm.push(_$persist(key as _$TKey, value).then(() => value));
-    }
-
-    return Promise.all(_prm);
 }
 
 //@ts-ignore
