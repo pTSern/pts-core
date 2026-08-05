@@ -10,19 +10,27 @@ declare namespace pTS {
     }
 
     interface _$ICacheCommon<__TInterfaces_, IsAsync extends boolean> {
-        set<_TKey extends keyof __TInterfaces_>(what: _TKey, value: __TInterfaces_[_TKey]): _$TReturn<void, IsAsync>
+        set<_TKey extends keyof __TInterfaces_>(what: _TKey, value: __TInterfaces_[_TKey]): IsAsync extends true ? any : void
         get<_TKey extends keyof __TInterfaces_>(what: _TKey, creator?: pFlex.TFunc<[Map<string, any>, _TKey], __TInterfaces_[_TKey]>): _$TReturn<__TInterfaces_[_TKey], IsAsync>
     }
 
     interface _$ILinearCache<__TInterfaces_> extends _$ICacheCommon<__TInterfaces_, false> {}
     interface _$ISyncCache<__TInterfaces_> extends _$ICacheCommon<__TInterfaces_, true> {}
 
-    type _$TEvents = 'set'
+    type _$TEvents = 'set' | 'get'
+
+    type _$TCacheInterfaces<__ICache__> = __ICache__ extends _$ICacheCommon<infer __TInterfaces_, any> ? __TInterfaces_ : never
+
+    interface _$TEventArgs<__TInterfaces_> {
+        set: [what: keyof __TInterfaces_, value: __TInterfaces_[keyof __TInterfaces_]]
+        get: [what: keyof __TInterfaces_, value: __TInterfaces_[keyof __TInterfaces_]]
+    }
 
     interface _$IEventifyCommon<__ICache__ extends _$ICacheCommon<any, any>> {
-        on<_TKey extends _$TEvents>(event: _TKey, func: pFlex.THandler<[...Parameters<__ICache__[_TKey]>], void>): void
-        once<_TKey extends _$TEvents>(event: _TKey, func: pFlex.THandler<[...Parameters<__ICache__[_TKey]>], void>): void
-        off<_TKey extends _$TEvents>(event: _TKey, func: pFlex.THandler<[...Parameters<__ICache__[_TKey]>], void>): void
+        on<_TKey extends _$TEvents>(event: _TKey, ...funcs: pFlex.THandler<_$TEventArgs<_$TCacheInterfaces<__ICache__>>[_TKey], void>[]): void
+        once<_TKey extends _$TEvents>(event: _TKey, ...funcs: pFlex.THandler<_$TEventArgs<_$TCacheInterfaces<__ICache__>>[_TKey], void>[]): void
+        off<_TKey extends _$TEvents>(event: _TKey, ...funcs: pFlex.THandler<_$TEventArgs<_$TCacheInterfaces<__ICache__>>[_TKey], void>[]): void
+        clear(event: _$TEvents): void
     }
 
     interface _$IEventify<__ICache__ extends _$ILinearCache<any>> extends _$IEventifyCommon<__ICache__> {}
