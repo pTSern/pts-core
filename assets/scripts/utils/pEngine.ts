@@ -1,4 +1,4 @@
-import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator, serializeTag, deserialize, CCObject } from "cc";
+import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator, CCObject } from "cc";
 import { DEBUG } from "cc/env";
 import { EDITOR } from "cc/env";
 import * as pArray from "./pArray";

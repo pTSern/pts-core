@@ -12,13 +12,16 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
 
     private static _$pool = new Map<string, any>()
 
+    protected _$lock: boolean = false;
+    protected _$seal: boolean = false;
+    protected _$max: number = 0;
+    protected _$sid: string = null;
+
     @property({ type: Helper_IdSelector })
     hid: Helper_IdSelector = new Helper_IdSelector();
 
     @property({})
     protected _filter: pClass.ETypes = 'cc.Node';
-    protected _$lock: boolean = false;
-    protected _$max: number = 0;
 
     @property({ type: pClass.ETypes })
     get filter(): pClass.ETypes { return this._filter }
@@ -63,19 +66,29 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         } else {
             this.target = _ret;
         }
+        this._onPreLoad?.();
     }
+
+    protected _onPreLoad?(): void
 
     resetInEditor(): void {
         this.target.set(this._filter === 'cc.Node' ? this._filter : this.type);
+        this.onFocusInEditor();
     }
 
     onFocusInEditor(): void {
         CCClass.Attr.setClassAttr(this, 'type', 'readonly', this._$lock);
         CCClass.Attr.setClassAttr(this, 'filter', 'readonly', this._$lock);
 
-        if(this._$max > 0) {
-            this.target.max(this._$max)
+        CCClass.Attr.setClassAttr(this, 'filter', 'visible', !this._$lock);
+        CCClass.Attr.setClassAttr(this, 'type', 'visible', !this._$lock);
+
+        if(!!this._$sid) {
+            this.hid.lock(this._$sid);
         }
+
+        this.target.max(this._$max);
+        this._$seal && this.target.seal();
 
         switch(this._filter) {
             case 'cc.Node': break;
@@ -91,6 +104,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
                 break;
             }
         }
+
 
         this.target.ctor(pClass.getClassName(this._filter, this._type));
         this.target.key(this._key);

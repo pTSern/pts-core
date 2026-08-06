@@ -1,5 +1,5 @@
 
-import { _decorator, Component, EventTouch, math, Node, tween, Tween, view, UITransform, CCInteger, CCClass } from 'cc';
+import { _decorator, Component, EventTouch, math, Node, tween, Tween, view, UITransform, CCInteger, CCClass, Widget } from 'cc';
 import { UI_DualScroller_NavBar } from './UI.DualScroller.NavBar';
 import { pConst } from '../../../utils';
 import { UI_DualScroller_NavIndicator } from './UI.DualScroller.NavIndicator';
@@ -117,6 +117,7 @@ export class UI_DualScroller_Controller extends Component {
     }
 
     protected onDestroy(): void {
+        this.unschedule(this._actResize);
         this.bind(false);
     }
 
@@ -124,13 +125,43 @@ export class UI_DualScroller_Controller extends Component {
         const _method = isOn ? 'on' : 'off';
 
         try {
-        this.node[_method](Node.EventType.TOUCH_START, this._onTouchStart, this, true);
-        this.node[_method](Node.EventType.TOUCH_MOVE, this._onTouchMove, this, true);
-        this.node[_method](Node.EventType.TOUCH_END, this._onTouchEnd, this, true);
-        this.node[_method](Node.EventType.TOUCH_CANCEL, this._onTouchEnd, this, true);
+            this.node[_method](Node.EventType.TOUCH_START, this._onTouchStart, this, true);
+            this.node[_method](Node.EventType.TOUCH_MOVE, this._onTouchMove, this, true);
+            this.node[_method](Node.EventType.TOUCH_END, this._onTouchEnd, this, true);
+            this.node[_method](Node.EventType.TOUCH_CANCEL, this._onTouchEnd, this, true);
 
-        this.bar?.[_method]('onIconClicked', { func: this._actScrollTo, binder: this })
+            view[_method]('canvas-resize', this._onCanvasResize, this);
+
+            this.bar?.[_method]('onIconClicked', { func: this._actScrollTo, binder: this })
         } catch(e) {}
+    }
+
+    protected _onCanvasResize(): void {
+        this._actResize();
+        this.unschedule(this._actResize);
+        this.scheduleOnce(this._actResize, 0);
+    }
+
+    protected _actResize(): void {
+        if (!this._pages || this._pages.length === 0) return;
+
+        this.node.getComponent(Widget)?.updateAlignment();
+        if (this.container) {
+            this.container.getComponent(Widget)?.updateAlignment();
+        }
+        this._pages.forEach(p => p.node?.getComponent(Widget)?.updateAlignment());
+
+        this._actStopSnapping();
+        this._numPageWidth = this._getPageWidth();
+
+        this._intCurrentPage = math.clamp(this._intCurrentPage, 0, this._pages.length - 1);
+        const _targetOffset = this._intCurrentPage * this._numPageWidth;
+
+        this._intCurrentOffset = -1;
+        this._actApplyOffset(_targetOffset);
+
+        this.bar?.actUpdateIcons(this._intCurrentPage);
+        this.indicator?.actUpdatePosition(this._intCurrentPage);
     }
 
     protected _onTouchStart(event: EventTouch) {
