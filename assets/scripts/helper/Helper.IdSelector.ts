@@ -25,7 +25,22 @@ export class Helper_IdSelector extends Editor_Smart_SelfFocus {
         this.focus()
     }
 
+    @property({ readonly: true })
+    protected _$lock: boolean = false;
+
+    lock(id: string) {
+        this._sid = id;
+        this._$lock = true;
+    }
+
     focus(): void {
+        if(this._$lock) {
+            this._data = null;
+            CCClass.Attr.setClassAttr(this, 'data', 'readonly', true);
+            CCClass.Attr.setClassAttr(this, 'data', 'visible', false);
+            CCClass.Attr.setClassAttr(this, 'sid', 'readonly', true);
+        }
+
         if(!this._data) {
             CCClass.Attr.setClassAttr(this, 'sid', 'type', '');
             return;

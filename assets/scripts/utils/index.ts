@@ -9,6 +9,7 @@ import * as pObject from "./pObject";
 import * as pEngine from "./pEngine";
 import * as pGlobal from "./pGlobal";
 import * as pConst from "./pConst";
+import * as pLazy from "./pLazy";
 import { DEBUG } from "cc/env";
 import { js } from "cc";
 
@@ -22,7 +23,8 @@ export {
     pObject,
     pEngine,
     pGlobal,
-    pConst
+    pConst,
+    pLazy
 };
 
 if(DEBUG) {

@@ -13,13 +13,16 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
     @property({ readonly: true, visible() { return this._max > 0 } })
     protected _max: number = 0;
 
+    @property({ readonly: true })
+    protected _seal: boolean = false;
+
     @property({ type: CCObject })
     protected _list: _TObject[] = []
     @property({ type: CCObject })
     get list() { return this._list }
     set list(x) {
         this._list = x;
-        if(this._max > 0 && this._list.length > this._max) {
+        if(this._max > 0 && (this._list.length > this._max || this._list.length <= 0)) {
             this._list.length = this._max
         }
         this.focus();
@@ -34,6 +37,11 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
     max(max: number) {
         this._max = max;
+    }
+
+    seal() {
+        this._seal = true;
+        this.list.length = this._max;
     }
 
     static lazy<_TObject>(type: string) {
@@ -67,6 +75,10 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
         CCClass.Attr.setClassAttr(this, 'list', 'ctor', _ctor);
         CCClass.Attr.setClassAttr(this, '_list', 'ctor', _ctor);
+
+        if(this._seal) {
+            CCClass.Attr.setClassAttr(this, 'list', 'readonly', true);
+        }
 
         this._onFocus?.();
     }
