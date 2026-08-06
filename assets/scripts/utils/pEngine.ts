@@ -1,9 +1,10 @@
 import { Node, Component, NodeEventType, EventHandler, js, director, IVec3Like, v3, Layers, CCClass, Prefab, instantiate, JsonAsset, assetManager, Director, Scene, _decorator, CCObject } from "cc";
-import { DEBUG } from "cc/env";
+import { DEBUG, DEV } from "cc/env";
 import { EDITOR } from "cc/env";
 import * as pArray from "./pArray";
 import * as pClass from './pClass';
 import * as pObject from "./pObject";
+import * as pConst from "./pConst";
 import * as cc from 'cc'
 
 /**
@@ -42,10 +43,42 @@ interface _IJson {
     invoke: (asset: pFlex.TArray<JsonAsset>, ...args: any[]) => void;
     seal: (asset: pFlex.TArray<JsonAsset>, status: boolean) => void;
     clean: (asset: pFlex.TArray<JsonAsset>) => void;
+    previewer(data: JsonAsset): any
 }
 
-
 export const Json = js.createMap<_IJson>();
+
+if(DEV) {
+    const { editor_ccclass, editor_property } = pClass;
+
+    @editor_ccclass('pEngine.JsonPreviewer')
+    class _JsonPreviewer {
+        @editor_property()
+        sealed: boolean = false;
+
+        @editor_property(undefined, { name: 'options.isAutoReleased' })
+        isAutoReleased: boolean = false;
+
+        @editor_property([cc.CCString])
+        listeners: string[] = [];
+    }
+
+    Json.previewer = function(data) {
+        const _out = new _JsonPreviewer();
+        const _data = _$map.get(data);
+        if(_data) {
+            _out.sealed = _data.sealed;
+            _out.isAutoReleased = _data.options.isAutoReleased;
+            _out.listeners = _data.listeners.map(l => `${l.binder?.name || 'null'}::${l.func?.name || 'anonymous'}`)
+        }
+        return _out;
+    }
+    window['$json'] = _$map;
+
+} else {
+    Json.previewer = function() { return pConst.EMPTY }
+}
+
 Json.add = function(asset, ...ls: pFlex.THandler[]) {
     const _assets = pArray.flatter(asset);
     const mappedLs = pClass.mapper(ls);
