@@ -1,5 +1,5 @@
 
-import { js } from "cc";
+import { Enum, js } from "cc";
 import { EDITOR, EDITOR_NOT_IN_PREVIEW, DEV } from "cc/env";
 
 /**
@@ -17,6 +17,8 @@ const __pool__ = js.createMap(true);
 export const VOID_FUNC = () => void 0;
 export const ME_FUNC = function(_: any) { return _ }
 export const ARRAY_FUNC = function() { return [] };
+export const ENUM = Enum({})
+export const EMPTY = js.createMap(false);
 
 export function getNumFunc(num: number) {
     num = typeof num == 'number' ? num : 0
