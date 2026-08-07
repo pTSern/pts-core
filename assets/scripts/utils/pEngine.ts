@@ -538,3 +538,18 @@ CompUtils.appends = function(events: pFlex.TArray<IEventBinders>) {
         }
     }
 }
+
+interface _IDevice {
+    vibrate(pattern: VibratePattern): void;
+}
+
+export const Device = js.createMap<_IDevice>();
+Device.vibrate = function(pattern: VibratePattern) {
+    try {
+        if(cc.sys.isBrowser) {
+            window.navigator.vibrate(pattern);
+        }
+    } catch(_error) {
+        console.error("[VibrateAPI] >> Error >>", _error);
+    }
+}
