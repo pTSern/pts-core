@@ -62,9 +62,7 @@ const _$storage: Promise<any> = new Promise(resolve => {
 });
 
 let _$waiter: ((value: boolean) => void) | null = null;
-const _$waitPromise = new Promise<boolean>(resolve => {
-    _$waiter = resolve;
-});
+const _$waitPromise = new Promise<boolean>(resolve => _$waiter = resolve);
 
 async function _$persist<_TKey extends _$TKey>(key: _TKey, value: _$IGameData[_TKey]) {
     const _storage = _$.storage;
@@ -168,10 +166,10 @@ Data_Manager.init = async function(data) {
 
         for (let i = 0; i < keys.length; i++) {
             const _key = keys[i];
-            const storedVal = _keepers[i];
+            const _val = _keepers[i];
 
-            if (storedVal !== undefined && storedVal !== null) {
-                _container[_key] = storedVal;
+            if (_val !== undefined && _val !== null) {
+                _container[_key] = _val;
             } else {
                 _container[_key] = data[_key];
                 if (storage.set) {
@@ -224,5 +222,4 @@ Data_Manager.status = function() {
     return _$.status;
 }
 
-//@ts-ignore
 globalThis.Data_Manager = Data_Manager;
