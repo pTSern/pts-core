@@ -66,7 +66,9 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
         for(let i = 0; i < this._list.length; i ++) {
             const _ret = this._list[i];
-            if(_ret !== null && _ret instanceof _ctor) continue;
+            if(_ret !== null && _ret instanceof _ctor) {
+                continue;
+            }
             this._list[i] = new _ctor() as _TObject;
         }
 
