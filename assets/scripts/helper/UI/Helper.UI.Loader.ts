@@ -28,8 +28,9 @@ export class Helper_UI_Loader {
     @editor_property()
     protected _isSealedUpdater: boolean = false;
 
-    show(status: boolean) {
+    show(status: boolean, ref: number = 0) {
         status ? this._ref ++ : this._ref --;
+        this._ref += ref
         this._ref = Math.max(this._ref, 0);
         const _will = this._ref == 0 ? false : true
 

@@ -115,7 +115,6 @@ export function mapper(listener: pFlex.TArray<pFlex.THandler>, out?: pFlex.IBind
 function _emit<_TArg extends any[] = any[], _TReturn = any>(_func: pFlex.IBinder<_TArg[]>, params: _TArg) {
     const { func, args, binder } = _func;
     const _params = args ? args : params
-    console.log('pClass._emit', func, binder, ..._params)
     return !!binder ? func.call(binder, ..._params) : func(..._params)
 }
 

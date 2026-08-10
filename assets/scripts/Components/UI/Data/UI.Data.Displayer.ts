@@ -17,6 +17,7 @@ class _Helper<_TType> {
 
         await Data_Manager.wait();
         const _data = Data_Manager.get(this.key);
+        console.log(`[UI_Data_Displayer._Helper] Refreshing key: ${this.key}, value:`, _data);
         if(_data === undefined || _data === null) return;
 
         this.hooker.set(_data as _TType);

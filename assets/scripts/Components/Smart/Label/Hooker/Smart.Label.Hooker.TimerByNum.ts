@@ -6,10 +6,14 @@ const { ccclass, property } = _decorator;
 
 @ccclass('Smart_Label_Hooker_TimerByNum')
 export class Smart_Label_Hooker_TimerByNum extends Smart_Label_Hooker<number> {
+
     @editor_property()
     protected _value: number = 0;
 
     set(val: number): void {
         this._value = val;
+    }
+
+    protected _actLookUpBinder(...args: any[]): void {
     }
 }
