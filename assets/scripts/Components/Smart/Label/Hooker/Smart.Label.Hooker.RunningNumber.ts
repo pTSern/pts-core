@@ -1,6 +1,6 @@
-import { _decorator, JsonAsset, Label, math, tween, Tween } from 'cc';
+import { _decorator, Label, macro, math, tween, Tween } from 'cc';
 import { Type_EasingSelector } from '../../../Type/Type.Easing';
-import { pConst, pEngine, pString, pClass } from 'db://pts-core/scripts/utils';
+import { pConst, pString, pClass, pGlobal } from 'db://pts-core/scripts/utils';
 import { Smart_Label_Hooker } from './Smart.Label.Hooker';
 
 const { ccclass, property, requireComponent } = _decorator;
@@ -19,11 +19,8 @@ export class Smart_Label_Hooker_RunningNumber extends Smart_Label_Hooker<number>
     @property({ group: pConst.GROUPS.CORE })
     easing: Type_EasingSelector = new Type_EasingSelector();
 
-    @property({ type: JsonAsset, group: pConst.GROUPS.EVENT })
-    listener: JsonAsset = null;
-
     @editor_property()
-    protected _value: number = 0;
+    protected _value: number = -1;
 
     get value() { return this._value; }
     set value(value: number) {
@@ -32,13 +29,9 @@ export class Smart_Label_Hooker_RunningNumber extends Smart_Label_Hooker<number>
     }
 
     protected _tween: Tween<Smart_Label_Hooker_RunningNumber> = null;
-    protected _onPreLoad(): void {
-        if(this.listener) {
-            pEngine.Json.add(this.listener, { func: this._actLookUpBinder, binder: this });
-        }
-    }
 
     protected _actLookUpBinder(...args: any[]) {
+        pGlobal.log('DEV', `[Smart_Label_Hooker_RunningNumber] [Data] current value: ${this._value}`, ...args);
         for(const _item of args) {
             if(typeof _item !== 'number') continue;
             this.set(_item);

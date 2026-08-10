@@ -19,6 +19,9 @@ Enum(_EMode);
 export class Config_Smart<_TObject> extends Component implements Object_IIdHolder<string> {
 
     private static _$pool = new Dictionary_Persistent<string, Helper_Selector_Smart<any>>();
+    static get<_TObject>(key: string) {
+        return Config_Smart._$pool.get(key) as Helper_Selector_Smart<_TObject>;
+    }
 
     protected _$lock: boolean = false;
     protected _$seal: boolean = false;

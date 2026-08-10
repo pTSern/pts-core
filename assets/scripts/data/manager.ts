@@ -172,6 +172,7 @@ Data_Manager.init = async function(data: _$IGameData) {
     _$.status = 'done';
     _$waiter?.(true); _$waiter = null;
     Data_Manager.init = async () => true;
+    console.log('[Data_Manager] Initialized with data:', _$mobj());
     return true;
 };
 
