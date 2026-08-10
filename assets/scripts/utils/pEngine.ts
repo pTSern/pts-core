@@ -553,3 +553,5 @@ Device.vibrate = function(pattern: VibratePattern) {
         console.error("[VibrateAPI] >> Error >>", _error);
     }
 }
+
+

@@ -34,7 +34,7 @@ declare namespace pTS {
     type _$TCacheInterfaces<__ICache__> = __ICache__ extends _$ICacheCommon<infer __TInterfaces_, any> ? __TInterfaces_ : never
 
     interface _$TEventArgs<__TInterfaces_> {
-        set: [what: keyof __TInterfaces_, value: __TInterfaces_[keyof __TInterfaces_]]
+        set: [what: keyof __TInterfaces_, new_value: __TInterfaces_[keyof __TInterfaces_], old_value: __TInterfaces_[keyof __TInterfaces_] | undefined]
         get: [what: keyof __TInterfaces_, value: __TInterfaces_[keyof __TInterfaces_]]
     }
 

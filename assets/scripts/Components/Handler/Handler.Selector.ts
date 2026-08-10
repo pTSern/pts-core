@@ -130,7 +130,7 @@ export class Handler_Selector extends Editor_Smart_SelfFocus {
         const _method = this.method;
         if(!_method) return
 
-        _method.method.call(_method.binder, ...args)
+        return _method.method.call(_method.binder, ...args)
     }
 
     get method(): { method: Function, binder: any } | undefined {

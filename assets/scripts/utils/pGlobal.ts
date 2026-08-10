@@ -1,6 +1,7 @@
 
 import { Enum } from "cc";
 import * as cc from "cc";
+import * as CC from "cc/env";
 import * as pArray from "./pArray";
 import { EDITOR_ONLY_IN_PREVIEW } from "./pConst";
 
@@ -63,21 +64,43 @@ export function download(fileName: string, content: string) {
 }
 
 // Logging
-export interface ILogOption {
+export interface _ILogOption {
     title: string;
     color?: string;
     weight?: "bold" | "light" | "italic";
 }
 
-export function log(...args: any[]) { console.log(...args); }
-export function warn(...args: any[]) { console.warn(...args); }
-export function error(...args: any[]) { console.error(...args); }
+export function group(level: _TLogLevel, opt: string | _ILogOption, ...args: any[][]) {
+    if(level === 'DEV' && !CC.DEV) return;
 
-export function group(opt: string | ILogOption, ...args: any[]) {
     const { title, color = "#3498db", weight = "bold" } = typeof opt === 'string' ? { title: opt } : opt;
     console.groupCollapsed(`%c ${title}`, `color: ${color}; font-weight: ${weight}`);
-    args.forEach(arg => console.log(arg));
+    args.forEach(arg => console.log(...arg));
     console.groupEnd();
+}
+
+type _TLogLevel = 'DEV' | 'ALL'
+
+interface _ILogger {
+    log(level: _TLogLevel, ...args: any[]): void;
+    warn(level: _TLogLevel, ...args: any[]): void;
+    error(level: _TLogLevel, ...args: any[]): void;
+    group(level: _TLogLevel, title: string, ...list: any[][]): void
+}
+
+
+export const Logger = cc.js.createMap<_ILogger>();
+export function log(level: _TLogLevel, ...args: any[]) {
+    if(level === 'DEV' && !CC.DEV) return;
+    console.log.call(console, ...args);
+}
+export function warn(level: _TLogLevel, ...args: any[]) {
+    if(level === 'DEV' && !CC.DEV) return;
+    console.log.call(console, ...args);
+}
+export function error(level: _TLogLevel, ...args: any[]) {
+    if(level === 'DEV' && !CC.DEV) return;
+    console.log.call(console, ...args);
 }
 
 // Compression / Decompression

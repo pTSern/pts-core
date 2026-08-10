@@ -55,8 +55,15 @@ export const CC_IEnumList = Object.assign(_is_CC_IEnumList, {
         let _arr: CC_IEnumList<_TKey, _TValue>[] = [];
         if(!target) return _arr;
 
-        const _keys = Array.isArray(target) ? target : Object.keys(target);
-        _arr = _keys.map((_: any) => ({ name: _, value: _out(_) }));
+        if(Array.isArray(target)) {
+            for(const _target of target) {
+                _arr.push({ name: _target, value: _out(_target) })
+            }
+        } else {
+            for(const _key in target) {
+                _arr.push({ name: _key as _TKey, value: _out(_key as _TKey) })
+            }
+        }
 
         return _arr;
     }

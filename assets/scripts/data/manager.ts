@@ -4,12 +4,13 @@
 
 import { js } from "cc";
 import { DEV } from "cc/env";
+import { pGlobal } from "../utils";
 
 type _$IGameData = pTS.bridge.IGameData;
 type _$TKey = keyof _$IGameData;
-type _$TStatus = 'pending' | 'done' | 'failed'
+type _$TStatus = 'pending' | 'done' | 'failed';
 
-interface _$IManager {
+type _$IManager = {
     init(data: _$IGameData): Promise<boolean>
 
     // Single key get
@@ -34,18 +35,19 @@ interface _$IManager {
 
     wait(): Promise<boolean>
     status(): _$TStatus
-}
 
-export const Data_Manager = js.createMap<_$IManager>(true);
-export namespace Data_Manager {
-    export type TData = _$IGameData
+    // Eventify methods
+    on<_TKey extends 'set' | 'get'>(event: _TKey, ...funcs: any[]): void
+    once<_TKey extends 'set' | 'get'>(event: _TKey, ...funcs: any[]): void
+    off<_TKey extends 'set' | 'get'>(event: _TKey, ...funcs: any[]): void
+    clear(event: 'set' | 'get'): void
 }
 
 const _$ = {
-    container: pTS.bridge.get('game_data', () => js.createMap<_$IGameData>(true)),
     storage: pTS.bridge.get('storage'),
     status: 'pending' as _$TStatus,
-}
+    map: null as Map<string, any> | null,
+};
 
 const _$storage: Promise<any> = new Promise(resolve => {
     if (_$.storage?.set) {
@@ -61,165 +63,129 @@ const _$storage: Promise<any> = new Promise(resolve => {
     }
 });
 
-let _$waiter: ((value: boolean) => void) | null = null;
-const _$waitPromise = new Promise<boolean>(resolve => _$waiter = resolve);
+let _$waiter: pFlex.TFunc<[boolean], void> | null = null;
+const _$promiser = new Promise<boolean>(resolve => _$waiter = resolve);
 
-async function _$persist<_TKey extends _$TKey>(key: _TKey, value: _$IGameData[_TKey]) {
-    const _storage = _$.storage;
-    if (!_storage?.set) {
-        DEV && console.warn('[Data_Manager] Storage is not ready. Value set in memory only.', key, value);
-        return;
-    }
-
-    try {
-        await _storage.set(key, value);
-    } catch (error) {
-        DEV && console.error('[Data_Manager] Failed to persist data key:', key, error);
-    }
+const _$cache = js.createMap() as any;
+function _$mobj() {
+    if (_$.map) for (const [k, v] of _$.map) _$cache[k] = v;
+    return _$cache;
 }
 
-function _$gone(key: string) {
-    const _out = _$.container[key as _$TKey];
-    DEV && console.log("[Data_Manager].{get} Log: \n\tParams: ", key, "\n\tOut: ", _out, "\n\tOrigin: ", _$.container);
-    return _out;
+async function _$persist(key: _$TKey, value: any) {
+    const _s = _$.storage;
+    if (!_s?.set) { pGlobal.warn('DEV', '[Data_Manager] Storage not ready, in-memory only:', key); return; }
+    try { await _s.set(key, value); }
+    catch (e) { pGlobal.error('DEV', '[Data_Manager] Persist failed:', key, e); throw e; }
 }
 
-function _$gbulk(keysList: string[]) {
-    const _obj = js.createMap();
-    for (const key of keysList) {
-        _obj[key] = _$.container[key as _$TKey];
+export const Data_Manager = pTS.bridge.replican<_$IGameData>({
+    is_dict_mode: true,
+    is_eventify: true,
+    is_ambiguous: true,
+    asynctify: {
+        async set(key: string, value: any, map: Map<string, any>) {
+            _$.map = map;
+            const _k = key as _$TKey;
+            const _had = map.has(_k), _old = map.get(_k);
+            const _val = typeof value === 'function' ? value(_$mobj()) : value;
+
+            map.set(_k, _val);
+            try { await _$persist(_k, _val); return _val; }
+            catch (e) { _had ? map.set(_k, _old) : map.delete(_k); throw e; }
+        },
+        async get(key: string, map: Map<string, any>) {
+            _$.map = map;
+            if (map.has(key)) return map.get(key);
+
+            if (_$.storage?.get) {
+                try {
+                    const _v = await _$.storage.get(key);
+                    if (_v != null) { map.set(key, _v); return _v; }
+                } catch (e) { pGlobal.error('DEV', '[Data_Manager] Storage get failed:', key, e); }
+            }
+            return undefined;
+        }
     }
-    DEV && console.log("[Data_Manager].{get bulk} Log: \n\tParams: ", ...keysList, "\n\tOut: ", _obj, "\n\tOrigin: ", _$.container);
-    return _obj;
+}) as unknown as _$IManager;
+
+export namespace Data_Manager {
+    export type TData = _$IGameData;
+    export type TKey = _$TKey;
+}
+
+// Capture replican's original get to bootstrap the internal Map reference
+const _$og = Data_Manager.get;
+async function _$map() {
+    if (_$.map) return _$.map;
+    await _$og.call(Data_Manager, '__init__' as any);
+    return _$.map!;
 }
 
 Data_Manager.get = function(what: any, ...rest: any[]) {
-    if (_$.status !== 'done') {
-        return Data_Manager.wait().then(() => {
-            return Data_Manager.get(what, ...rest);
-        });
-    }
+    if (_$.status !== 'done') return Data_Manager.wait().then(() => Data_Manager.get(what, ...rest));
 
+    const m = _$.map!;
     if (Array.isArray(what) || rest.length > 0) {
-        const keysList = Array.isArray(what) ? what : [what, ...rest];
-        return _$gbulk(keysList);
+        const keys = Array.isArray(what) ? what : [what, ...rest];
+        const _obj = js.createMap();
+        for (const k of keys) _obj[k] = m.get(k);
+        return _obj;
     }
-
-    return _$gone(what);
+    return m.get(what);
 } as any;
 
-Data_Manager.set = async function(...args: any[]) {
-    if (_$.status !== 'done') {
-        await Data_Manager.wait();
-    }
+Data_Manager.init = async function(data: _$IGameData) {
+    if (_$.status === 'done') return true;
 
-    const _container = _$.container as any;
+    const map = await _$map();
 
-    if (args.length === 2) {
-        const k = args[0] as _$TKey;
-        const v = args[1];
-        const _val = typeof v === 'function' ? v(_container) : v;
+    // Wait for storage ready (3s timeout fallback)
+    const storage = await Promise.race([
+        _$storage,
+        new Promise<null>(r => setTimeout(() => r(null), 3000))
+    ]);
 
-        _container[k] = _val;
-        await _$persist(k, _val);
-        return _val;
-    }
-
-    if (args.length % 2 !== 0) {
-        DEV && console.error("[Data_Manager] set expected key-value pairs (even argument count), got:", args.length);
-    }
-
-    const _prm: Promise<any>[] = [];
-    for (let i = 0; i < args.length - 1; i += 2) {
-        const k = args[i] as _$TKey;
-        const v = args[i + 1];
-        if (k == null) continue;
-
-        const _val = typeof v === 'function' ? v(_container) : v;
-        _container[k] = _val;
-        _prm.push(_$persist(k, _val));
-    }
-
-    await Promise.all(_prm);
-} as any;
-
-Data_Manager.init = async function(data) {
-    if (_$.status === 'done') {
-        return true;
-    }
-
-    const _container = _$.container;
-
-    // 1. Wait for storage ready (with a 3s timeout fallback in case storage is omitted)
-    const timeout = new Promise<null>(res => setTimeout(() => res(null), 3000));
-    const storage = await Promise.race([_$storage, timeout]);
-
-    // 2. Load stored data or seed default values concurrently
     if (storage?.get) {
         const keys = Object.keys(data);
-
-        // Bulk parallel read
-        const _readers = keys.map(k => storage.get(k).catch(() => undefined));
-        const _keepers = await Promise.all(_readers);
-
-        const _writers: Promise<any>[] = [];
+        const vals = await Promise.all(keys.map(k => storage.get(k).catch(() => undefined)));
+        const writers: Promise<any>[] = [];
 
         for (let i = 0; i < keys.length; i++) {
-            const _key = keys[i];
-            const _val = _keepers[i];
-
-            if (_val !== undefined && _val !== null) {
-                _container[_key] = _val;
+            const k = keys[i], v = vals[i];
+            if (v != null) {
+                map.set(k, v);
             } else {
-                _container[_key] = data[_key];
-                if (storage.set) {
-                    _writers.push(storage.set(_key, data[_key]).catch((e: any) => {
-                        DEV && console.error('[Data_Manager] Failed to set default for key:', _key, e);
-                    }));
-                }
+                map.set(k, data[k as _$TKey]);
+                if (storage.set) writers.push(
+                    storage.set(k, data[k as _$TKey]).catch((e: any) => {
+                        pGlobal.error('DEV', '[Data_Manager] Failed to seed key:', k, e);
+                    })
+                );
             }
         }
-
-        // Bulk parallel write for missing default keys
-        if (_writers.length > 0) {
-            await Promise.all(_writers);
-        }
+        if (writers.length) await Promise.all(writers);
     } else {
-        for (const _key in data) {
-            if (_container[_key] === undefined) {
-                _container[_key] = data[_key];
-            }
-        }
+        for (const k in data) if (!map.has(k)) map.set(k, data[k as _$TKey]);
     }
 
     _$.status = 'done';
-    if (_$waiter) {
-        _$waiter(true);
-        _$waiter = null;
-    }
-
-    // Init runs once: override init with one-shot instant resolver
+    _$waiter?.(true); _$waiter = null;
     Data_Manager.init = async () => true;
-
     return true;
-}
+};
 
 Data_Manager.all = function(_async: boolean = false) {
-    if (_async) {
-        return Data_Manager.wait().then(_ => _$.container);
-    } else {
-        return _$.container;
-    }
+    if (_async) return Data_Manager.wait().then(() => _$mobj());
+    return _$mobj();
 } as typeof Data_Manager.all;
 
 Data_Manager.wait = function() {
     if (_$.status === 'done') return Promise.resolve(true);
     if (_$.status === 'failed') return Promise.resolve(false);
-    return _$waitPromise;
-}
+    return _$promiser;
+};
 
-Data_Manager.status = function() {
-    return _$.status;
-}
+Data_Manager.status = function() { return _$.status; };
 
 globalThis.Data_Manager = Data_Manager;

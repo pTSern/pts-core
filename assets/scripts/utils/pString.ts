@@ -55,7 +55,7 @@ export function formatKMB(num: number, positive: string = "", negative: string =
         unitIdx++;
     }
 
-    const str = unitIdx === 0 ? String(abs) : value.toFixed(2).replace(/\.?0+$/, "");
+    const str = (unitIdx === 0 ? abs : value).toFixed(2).replace(/\.?0+$/, "");
     return `${num > 0 ? positive : negative}${str}${units[unitIdx]}`;
 }
 
