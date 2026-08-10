@@ -1,4 +1,4 @@
-import { _decorator, easing, TweenEasing } from "cc";
+import { _decorator, easing, Tween, TweenEasing } from "cc";
 import { Handler_Selector } from "../Handler/Handler.Selector";
 const { ccclass, property } = _decorator
 
@@ -13,7 +13,7 @@ export class Type_EasingSelector {
     @property({ type: Handler_Selector })
     handler: Handler_Selector = new Handler_Selector();
 
-    get get() {
+    get get(): TweenEasing | pFlex.TFunc<[number], number> {
         if(!this.handler.isValid(true)) return this.easing;
 
         return (...args: any[]) => this.handler.emit(...args)

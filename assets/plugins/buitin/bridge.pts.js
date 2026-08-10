@@ -10,8 +10,9 @@ if (_$) {
         const keyGetter = (opt && typeof opt.key_getter === "function") ? opt.key_getter : null;
         const _emit = isEventify ? _$.eventify(_, false, false) : null;
 
-        function _setOne(rawKey, value) {
+        function _sone(rawKey, value) {
             const _key = keyGetter ? keyGetter(rawKey) : rawKey;
+            const _old = isEventify ? _container.get(_key) : undefined;
             let _out;
             if (isAsync) {
                 _out = opt.asynctify.set(_key, value, _container);
@@ -19,7 +20,7 @@ if (_$) {
                 _container.set(_key, value);
             }
             if (isEventify) {
-                _emit("set", _key, value);
+                _emit("set", _key, value, _old);
             }
             return _out;
         }
@@ -27,14 +28,14 @@ if (_$) {
         _.set = function (...args) {
             if (args.length === 0) return;
             if (args.length === 2 && typeof args[0] === "string") {
-                return _setOne(args[0], args[1]);
+                return _sone(args[0], args[1]);
             }
             if (args.length % 2 !== 0) {
                 console.error("[pTS.bridge] set expected key-value pairs (even argument count), got:", args.length);
             }
             const _promises = isAsync ? [] : null;
             for (let i = 0; i < args.length - 1; i += 2) {
-                const res = _setOne(args[i], args[i + 1]);
+                const res = _sone(args[i], args[i + 1]);
                 if (isAsync && res && typeof res.then === "function") {
                     _promises.push(res);
                 }
@@ -48,9 +49,10 @@ if (_$) {
             if (_out == null && typeof creator === "function") {
                 _out = creator(_container, _key);
                 if (_out != null) {
+                    const _old = isEventify ? _container.get(_key) : undefined;
                     _container.set(_key, _out);
                     if (isEventify) {
-                        _emit("set", _key, _out);
+                        _emit("set", _key, _out, _old);
                     }
                 }
             } else if (isEventify && _out != null) {
@@ -63,12 +65,13 @@ if (_$) {
             const _key = keyGetter ? keyGetter(rawKey) : rawKey;
             let _data = await opt.asynctify.get(_key, _container);
             if (_data == null && typeof creator === "function") {
+                const _old = isEventify ? _container.get(_key) : undefined;
                 _data = creator(_container, _key);
                 if (_data != null) {
                     const res = opt.asynctify.set(_key, _data, _container);
                     if (res && typeof res.then === "function") await res;
                     if (isEventify) {
-                        _emit("set", _key, _data);
+                        _emit("set", _key, _data, _old);
                     }
                 }
             }
