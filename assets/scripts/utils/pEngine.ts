@@ -13,45 +13,173 @@ import * as cc from 'cc'
 
 // --- Assets (Json) ---
 
-export interface IJsonOption { isAutoReleased: boolean; }
-interface IJsonData { sealed: boolean; listeners: pFlex.IBinder[]; options: IJsonOption; }
-const _$map = new WeakMap<JsonAsset, IJsonData>();
+const _$map = new WeakMap<JsonAsset, _IJson.Event.IData>();
+const _$pdt = new WeakMap<JsonAsset, _IJson.Param.IData>();
 
 const _originJsonDestroyer = JsonAsset.prototype.destroy;
 JsonAsset.prototype.destroy = function() {
     const data = _$map.get(this);
     if (data?.options.isAutoReleased) {
         _$map.delete(this);
+        _$pdt.delete(this);
         assetManager.releaseAsset(this);
     }
     return _originJsonDestroyer.call(this);
 };
 
-function _get(asset: JsonAsset): IJsonData | undefined {
+function _get(asset: JsonAsset): _IJson.Event.IData | undefined {
     if (!asset || !asset.isValid) return undefined;
     let data = _$map.get(asset);
     if (!data) {
-        data = { sealed: false, listeners: [], options: { isAutoReleased: false } };
+        data = { sealed: false, listeners: [], options: { isAutoReleased: true } };
         _$map.set(asset, data);
     }
     return data.sealed ? undefined : data;
 }
 
-interface _IJson {
-    add: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
-    remove: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
-    invoke: (asset: pFlex.TArray<JsonAsset>, ...args: any[]) => void;
-    seal: (asset: pFlex.TArray<JsonAsset>, status: boolean) => void;
-    clean: (asset: pFlex.TArray<JsonAsset>) => void;
-    previewer(data: JsonAsset): any
+namespace _IJson {
+    export interface Core {
+        event: _IJson.Event.IMethods;
+        param: _IJson.Param.IMethods;
+        stringify(data: any): string
+    }
+
+    export namespace Event {
+        export interface IMethods {
+            add: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
+            remove: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
+            invoke: (asset: pFlex.TArray<JsonAsset>, ...args: any[]) => void;
+            seal: (asset: pFlex.TArray<JsonAsset>, status: boolean) => void;
+            clean: (asset: pFlex.TArray<JsonAsset>) => void;
+            previewer(data: JsonAsset): any
+        }
+
+        interface _IOption {
+            isAutoReleased: boolean;
+        }
+
+        export interface IData {
+            sealed: boolean;
+            listeners: pFlex.IBinder[];
+            options: _IOption;
+        }
+    }
+
+    export namespace Param {
+        export interface IMethods {
+            set<_TObject extends object>(target: JsonAsset, data: _TObject): void
+            get<_TObject extends object>(target: JsonAsset): _TObject | undefined
+            lock(target: JsonAsset, status?: boolean): void
+            previewer(data: JsonAsset): any
+        }
+
+        export interface IData {
+            locked: boolean
+            data: Record<string, any>
+        }
+    }
 }
 
-export const Json = js.createMap<_IJson>();
+export const Json = js.createMap<_IJson.Core>();
+Json.event = js.createMap<_IJson.Event.IMethods>();
+Json.param = js.createMap<_IJson.Param.IMethods>();
+
+function _jsnode(_val: cc.Node, simple: boolean = false) {
+    if(!_val) return null;
+    const _data = {
+        name: _val.name,
+        uuid: _val.uuid,
+        active: _val.active,
+        activeInHierarchy: _val.activeInHierarchy,
+        layer: Layers.Enum[_val.layer],
+        flag: _val._objFlags,
+        parent: _val.parent ? { name: _val.parent.name, uuid: _val.parent.uuid } : null,
+        children: _val.children.map(c => ({ name: c.name, uuid: c.uuid })),
+        comps: _val.components.map(c => _jscomp(c, true))
+    }
+
+    if(simple) return JSON.stringify(_data);
+    _data['position'] = {
+        lcal: _val.position.toString(),
+        world: _val.worldPosition.toString()
+    }
+    _data['euler'] = _val.eulerAngles.toString();
+    _data['angle'] = _val.angle;
+    _data['scale'] = _val.scale.toString();
+    _data['path'] = _getNodePath(_val);
+
+    return JSON.stringify(_data);
+}
+
+function _jscomp(_val: cc.Component, simple: boolean = false) {
+    if(!_val) return null;
+    const _data = {
+        name: _val.name,
+        uuid: _val.uuid,
+        flag: _val._objFlags,
+    }
+
+    if(simple) return JSON.stringify(_data);
+    _data['node'] = _jsnode(_val.node, true);
+    return JSON.stringify(_data);
+}
+
+function _to(_val: any) {
+    switch(typeof _val) {
+        case "number":
+        case "boolean":
+        case "bigint": return String(_val)
+        case "string":
+        case "symbol": return `"${String(_val)}"`
+        case "undefined": return `"[undefined]"`;
+        case "object": {
+            if(_val === null) {
+                return `null`;
+            }
+
+            if(_val instanceof cc.Component) {
+                return _jscomp(_val);
+            }
+
+            if(_val instanceof cc.Node) {
+                return _jsnode(_val);
+            }
+
+            if(Array.isArray(_val)) {
+                let _arr = "[";
+                for(const _item of _val) {
+                    _arr += `${_to(_item)}, `;
+                }
+                _arr = _arr.endsWith(', ') ? _arr.slice(0, -2) : _arr;
+                return `${_arr}]`;
+            }
+            break;
+        }
+        case "function": {
+            return `"${_val.name || 'anonymous'}: ${String(_val)}"`;
+        }
+    }
+}
+
+Json.stringify = function(data: any) {
+    if(data instanceof cc.Node) return _jsnode(data);
+    if(data instanceof cc.Component) return _jscomp(data);
+
+    let _out = "{";
+    for(const _key in data) {
+        if(pObject.isWriteOnlyProperty(data, _key)) continue;
+        const _val = data[_key];
+        _out += `"${_key}": ${_to(_val)}, `;
+    }
+    _out = _out.endsWith(', ') ? _out.slice(0, -2) : _out;
+
+    return `${_out}}`;
+}
 
 if(DEV) {
     const { editor_ccclass, editor_property } = pClass;
 
-    @editor_ccclass('pEngine.JsonPreviewer')
+    @editor_ccclass('pEngine.JsonEventPreviewer')
     class _JsonPreviewer {
         @editor_property()
         sealed: boolean = false;
@@ -63,7 +191,7 @@ if(DEV) {
         listeners: string[] = [];
     }
 
-    Json.previewer = function(data) {
+    Json.event.previewer = function(data) {
         const _out = new _JsonPreviewer();
         const _data = _$map.get(data);
         if(_data) {
@@ -73,13 +201,74 @@ if(DEV) {
         }
         return _out;
     }
-    window['$json'] = _$map;
+    window['$json'] = window['$json'] || {};
+    window['$json']['map'] = _$map;
 
 } else {
-    Json.previewer = function() { return pConst.EMPTY }
+    Json.event.previewer = function() { return pConst.EMPTY }
 }
 
-Json.add = function(asset, ...ls: pFlex.THandler[]) {
+
+function _jpget(asset: JsonAsset) {
+    if(!asset || !asset.isValid) return undefined
+
+    let _out = _$pdt.get(asset);
+    if(!_out) {
+        _out = { locked: false, data: {} };
+        _$pdt.set(asset, _out);
+    }
+
+    return _out;
+}
+
+if(DEV) {
+    const { editor_ccclass, editor_property } = pClass;
+
+    @editor_ccclass('pEngine.JsonParamPreviewer')
+    class _JsonParam {
+        @editor_property()
+        locked: boolean = false;
+
+        @editor_property([cc.CCString])
+        data: string[] = [];
+    }
+
+    Json.event.previewer = function(data) {
+        const _out = new _JsonParam();
+        const _data = _$pdt.get(data);
+        if(_data) {
+            _out.locked = _data.locked;
+            for(const _key in _data.data) {
+                _out.data.push(`${_key}: ${JSON.stringify(_data.data[_key])}`)
+            }
+        }
+
+        return _out;
+    }
+
+    window['$json'] = window['$json'] || {};
+    window['$json']['param'] = _$pdt;
+
+} else {
+    Json.param.previewer = function() { return pConst.EMPTY }
+}
+
+Json.param.set = function<_TObject extends object>(target: JsonAsset, data: _TObject) {
+    const _data = _jpget(target);
+    if(!_data || _data.locked) return;
+
+    for(const _key in data) {
+        if(pObject.isWriteOnlyProperty(data, _key)) continue;
+        _data.data[_key] = data[_key];
+    }
+}
+
+Json.param.get = function<_TObject extends object>(target: JsonAsset): _TObject | undefined {
+    const _data = _jpget(target);
+    return _data ? _data.data as _TObject : undefined;
+}
+
+Json.event.add = function(asset, ...ls: pFlex.THandler[]) {
     const _assets = pArray.flatter(asset);
     const mappedLs = pClass.mapper(ls);
     for(const _ret of _assets) {
@@ -88,7 +277,7 @@ Json.add = function(asset, ...ls: pFlex.THandler[]) {
     }
 }
 
-Json.remove = function(asset, ...ls: pFlex.THandler[]) {
+Json.event.remove = function(asset, ...ls: pFlex.THandler[]) {
     const _assets = pArray.flatter(asset);
     const rem = pClass.mapper(ls);
     for(const _ret of _assets) {
@@ -99,7 +288,7 @@ Json.remove = function(asset, ...ls: pFlex.THandler[]) {
     }
 }
 
-Json.clean = function(asset) {
+Json.event.clean = function(asset) {
     const _assets = pArray.flatter(asset);
     for(const _ret of _assets) {
         const _out = _get(_ret);
@@ -109,7 +298,7 @@ Json.clean = function(asset) {
     }
 }
 
-Json.invoke = function(asset, ...args: any[]) {
+Json.event.invoke = function(asset, ...args: any[]) {
     const _assets = pArray.flatter(asset);
     for(const _ret of _assets) {
         const d = _get(_ret);
@@ -117,7 +306,7 @@ Json.invoke = function(asset, ...args: any[]) {
     }
 }
 
-Json.seal = function(asset: pFlex.TArray<JsonAsset>, status: boolean) {
+Json.event.seal = function(asset: pFlex.TArray<JsonAsset>, status: boolean) {
     pArray.flatter(asset).forEach(a => { const d = _get(a); if (d) d.sealed = status; });
 }
 
@@ -144,6 +333,7 @@ interface _INodeUtils {
     findNodeOrCompViaZid(ref: string | { zid?: string, uuid?: string }): Node | Component | null
     getAttr(target: pFlex.TFunc | object): Record<string, _IAttr>
     getLocalPosition<TPosition extends IVec3Like>(_self: TFlexCCNode, _target: TFlexPosition<TPosition>, _dif?: TPosition): cc.Vec3
+    getNodePath(target: TFlexCCNode): string
 }
 
 const __$lookup_ = new Map<string, Node | Component>();
@@ -167,6 +357,19 @@ director.on(Director.EVENT_BEFORE_SCENE_LAUNCH, function(_scene: Scene) {
 
     _$add(_scene, __$lookup_);
 })
+
+function _getNodePath(target: TFlexCCNode): string {
+    const _node = target instanceof Node ? target : target.node;
+    if(!_node) return '';
+    let _path = _node.name;
+    let _parent = _node.parent;
+    while(_parent) {
+        _path = `${_parent.name}/${_path}`;
+        _parent = _parent.parent;
+    }
+    return _path;
+}
+
 
 
 function _$replacer<T = any, TKey extends keyof T = keyof T>(
@@ -265,6 +468,7 @@ function _$add(target: Node, pool: Map<string, Node | Component>) {
 
 export const NodeUtils = js.createMap<_INodeUtils>();
 
+NodeUtils.getNodePath = _getNodePath
 const _tempVec3 = v3();
 const _tempWorldVec3 = v3();
 

@@ -1,7 +1,7 @@
 
 import * as pArray from "./pArray";
 import { editor_ccclass, editor_property } from "./pClass";
-import { VOID_FUNC } from "./pConst";
+import { VOID_FUNC, RESOLVER } from "./pConst";
 import { uuid } from "./pString";
 
 import { _decorator, js } from 'cc'
@@ -249,5 +249,222 @@ Pool.warm = function(size: number) {
         _pool.push(_task);
     }
 }
+
+/**
+ * Guard handle returned by `Mutex.lock()`.
+ * Call to release the lock. Idempotent — safe to call multiple times.
+ */
+export type MutexGuard = () => void;
+
+/**
+ * Expert-level Mutex for async operation coordination.
+ *
+ * Ensures mutual exclusion over async critical sections with FIFO fairness,
+ * RAII-style scoping, poison detection, and diagnostic introspection.
+ *
+ * Modeled after Rust's `std::sync::Mutex` and C++'s `std::mutex`.
+ *
+ * Time: O(1) lock/unlock, O(n) queue drain.
+ * Space: O(n) where n is concurrent waiters.
+ *
+ * @example
+ * ```ts
+ * // Manual lock/unlock (C++ style)
+ * const release = await mutex.lock();
+ * try { /* critical section *\/ } finally { release(); }
+ *
+ * // Scoped lock (Rust style — preferred)
+ * const result = await mutex.scope(async () => {
+ *     return await exclusiveWork();
+ * });
+ *
+ * // Non-blocking attempt
+ * const guard = mutex.tryLock();
+ * if (guard) { /* got it *\/ guard(); }
+ *
+ * // Timed attempt
+ * const guard = await mutex.tryLockFor(2);
+ * if (guard) { /* acquired within 2s *\/ guard(); }
+ * ```
+ */
+export class Mutex {
+    private _queue: Promise<void> = RESOLVER;
+    private _locked: boolean = false;
+    private _waiters: number = 0;
+    private _poisoned: boolean = false;
+    private _poisonError: Error | null = null;
+    private _owner: string | null = null;
+
+    /** Whether the mutex is currently held. */
+    get isLocked(): boolean { return this._locked; }
+
+    /** Number of operations waiting to acquire. */
+    get waiters(): number { return this._waiters; }
+
+    /** Whether a previous holder threw during `scope()`, tainting the mutex. */
+    get isPoisoned(): boolean { return this._poisoned; }
+
+    /** Debug tag of the current holder, if provided via `owner` param. */
+    get owner(): string | null { return this._owner; }
+
+    /**
+     * Acquire the lock. Returns a guard function to release it.
+     *
+     * FIFO-ordered — callers acquire in the order they called `lock()`.
+     * The returned guard is idempotent; calling it multiple times is safe.
+     *
+     * @param owner  Optional debug tag identifying the holder.
+     * @throws If the mutex is poisoned.
+     *
+     * @example
+     * ```ts
+     * const release = await mutex.lock('playerUpdate');
+     * try { /* critical section *\/ } finally { release(); }
+     * ```
+     */
+    async lock(owner?: string): Promise<MutexGuard> {
+        this._throwIfPoisoned();
+
+        this._waiters++;
+
+        let _release: pFlex.TTFunc.Void;
+        const _next = new Promise<void>(rs => _release = rs);
+        const _prev = this._queue;
+        this._queue = this._queue.then(() => _next);
+
+        await _prev;
+
+        this._waiters--;
+        this._locked = true;
+        this._owner = owner ?? null;
+
+        return this._createGuard(_release);
+    }
+
+    /**
+     * Non-blocking lock attempt. Returns a guard if free, `null` if contended.
+     *
+     * Like Rust's `Mutex::try_lock()` or C++'s `std::mutex::try_lock()`.
+     * Never waits — O(1) synchronous check.
+     *
+     * @param owner  Optional debug tag identifying the holder.
+     * @returns Guard function if acquired, `null` if contended or poisoned.
+     */
+    tryLock(owner?: string): MutexGuard | null {
+        if (this._locked || this._poisoned) return null;
+
+        this._locked = true;
+        this._owner = owner ?? null;
+
+        let _release: pFlex.TTFunc.Void;
+        const _next = new Promise<void>(rs => _release = rs);
+        this._queue = this._queue.then(() => _next);
+
+        return this._createGuard(_release);
+    }
+
+    /**
+     * Timed lock attempt. Waits up to `seconds` before giving up.
+     *
+     * Like C++'s `std::timed_mutex::try_lock_for()`.
+     * If the timeout fires while queued, the internal slot is auto-released
+     * so the queue is never stalled by an abandoned waiter.
+     *
+     * @param seconds  Maximum time to wait.
+     * @param owner    Optional debug tag identifying the holder.
+     * @returns Guard function if acquired within the deadline, `null` on timeout.
+     */
+    async tryLockFor(seconds: number, owner?: string): Promise<MutexGuard | null> {
+        if (this._poisoned) return null;
+
+        let timedOut = false;
+        let acquired: MutexGuard | null = null;
+
+        const lockPromise = this.lock(owner).then(guard => {
+            if (timedOut) { guard(); return; }   // too late — auto-release the slot
+            acquired = guard;
+        });
+
+        const timeoutPromise = wait(seconds).then(() => { timedOut = true; });
+
+        await Promise.race([lockPromise, timeoutPromise]);
+        return acquired;
+    }
+
+    /**
+     * RAII-style scoped lock. Acquires, runs `fn`, and auto-releases — even on throw.
+     *
+     * If `fn` throws, the mutex is **poisoned** (Rust semantics). Subsequent `lock()`
+     * calls will throw until `clearPoison()` is called. The error is re-thrown.
+     *
+     * @param fn     Critical section to execute under the lock.
+     * @param owner  Optional debug tag identifying the holder.
+     * @returns The return value of `fn`.
+     *
+     * @example
+     * ```ts
+     * const data = await mutex.scope(async () => {
+     *     return await fetchExclusiveResource();
+     * }, 'resourceFetch');
+     * ```
+     */
+    async scope<_T>(fn: () => _T | Promise<_T>, owner?: string): Promise<_T> {
+        const release = await this.lock(owner);
+        try {
+            return await fn();
+        } catch (e) {
+            this._poisoned = true;
+            this._poisonError = e instanceof Error ? e : new Error(String(e));
+            throw e;
+        } finally {
+            release();
+        }
+    }
+
+    /**
+     * Clear the poisoned state, allowing the mutex to be used again.
+     * Like recovering from Rust's `PoisonError`.
+     *
+     * @returns The error that caused the poisoning, or `null`.
+     */
+    clearPoison(): Error | null {
+        const err = this._poisonError;
+        this._poisoned = false;
+        this._poisonError = null;
+        return err;
+    }
+
+    /**
+     * Hard reset to initial unlocked, unpoisoned state.
+     * **Dangerous** — any queued waiters will be orphaned. Use only for teardown.
+     */
+    reset() {
+        this._queue = RESOLVER;
+        this._locked = false;
+        this._waiters = 0;
+        this._owner = null;
+        this.clearPoison();
+    }
+
+    // ── Internals ─────────────────────────────────────────────
+
+    private _createGuard(release: pFlex.TTFunc.Void): MutexGuard {
+        let released = false;
+        return () => {
+            if (released) return;           // idempotent — double-release is no-op
+            released = true;
+            this._locked = this._waiters > 0;  // stays locked if others are queued
+            this._owner = null;
+            release();
+        };
+    }
+
+    private _throwIfPoisoned() {
+        if (this._poisoned) {
+            throw new Error(`[Mutex] Poisoned by prior holder: ${this._poisonError?.message ?? 'unknown error'}`);
+        }
+    }
+}
+
 
 

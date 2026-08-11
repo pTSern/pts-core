@@ -19,16 +19,16 @@ export class Event_Flexer<_TInterfaces extends Record<string, any> = { event: pF
 
     emit(...args: any[]) {
         const _out = this.isJsonFirst ? [
-            pEngine.Json.invoke(this.json, ...args),
+            pEngine.Json.event.invoke(this.json, ...args),
             EventHandler.emitEvents(this.handlers, ...args),
         ] : [
             EventHandler.emitEvents(this.handlers, ...args),
-            pEngine.Json.invoke(this.json, ...args),
+            pEngine.Json.event.invoke(this.json, ...args),
         ]
 
         if(this.isCleanUpAfterEmit) {
             this.handlers = [];
-            pEngine.Json.clean(this.json);
+            pEngine.Json.event.clean(this.json);
             this.json = [];
         }
 

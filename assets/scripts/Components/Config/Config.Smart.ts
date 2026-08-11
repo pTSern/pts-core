@@ -23,6 +23,13 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         return Config_Smart._$pool.get(key) as Helper_Selector_Smart<_TObject>;
     }
 
+    static wait<_TObject>(key: string) {
+        return new Promise<Helper_Selector_Smart<_TObject>>(_rs => {
+            const _out = Config_Smart._$pool.get(key, _ => _rs(_));
+            _out && _rs(_out as Helper_Selector_Smart<_TObject>);
+        })
+    }
+
     protected _$lock: boolean = false;
     protected _$seal: boolean = false;
     protected _$max: number = 0;
