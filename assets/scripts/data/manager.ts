@@ -189,4 +189,8 @@ Data_Manager.wait = function() {
 
 Data_Manager.status = function() { return _$.status; };
 
-globalThis.Data_Manager = Data_Manager;
+
+if(DEV) {
+    globalThis.Data_Manager = Data_Manager;
+    globalThis.Data_Manager['__internal__'] = _$
+}
