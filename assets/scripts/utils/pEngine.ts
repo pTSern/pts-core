@@ -67,15 +67,16 @@ namespace _IJson {
 
     export namespace Param {
         export interface IMethods {
-            set<_TObject extends object>(target: JsonAsset, data: _TObject): void
-            get<_TObject extends object>(target: JsonAsset): _TObject | undefined
+            set(target: JsonAsset, data: any): void
+            get<_TObject>(target: JsonAsset): _TObject | undefined
             lock(target: JsonAsset, status?: boolean): void
             previewer(data: JsonAsset): any
         }
 
         export interface IData {
             locked: boolean
-            data: Record<string, any>
+            data: Record<pFlex.TKey, any>
+            primary: boolean
         }
     }
 }
@@ -209,12 +210,12 @@ if(DEV) {
 }
 
 
-function _jpget(asset: JsonAsset) {
+function _$jpget(asset: JsonAsset) {
     if(!asset || !asset.isValid) return undefined
 
     let _out = _$pdt.get(asset);
     if(!_out) {
-        _out = { locked: false, data: {} };
+        _out = { locked: false, data: {}, primary: false };
         _$pdt.set(asset, _out);
     }
 
@@ -233,13 +234,13 @@ if(DEV) {
         data: string[] = [];
     }
 
-    Json.event.previewer = function(data) {
+    Json.param.previewer = function(data) {
         const _out = new _JsonParam();
         const _data = _$pdt.get(data);
         if(_data) {
             _out.locked = _data.locked;
             for(const _key in _data.data) {
-                _out.data.push(`${_key}: ${JSON.stringify(_data.data[_key])}`)
+                _out.data.push(`${_key}: ${Json.stringify(_data.data[_key])}`)
             }
         }
 
@@ -253,19 +254,54 @@ if(DEV) {
     Json.param.previewer = function() { return pConst.EMPTY }
 }
 
-Json.param.set = function<_TObject extends object>(target: JsonAsset, data: _TObject) {
-    const _data = _jpget(target);
+const _$key = Symbol('__$pEngine.JsonParam.primary');
+Json.param.set = function(target: JsonAsset, data: any) {
+    const _data = _$jpget(target);
     if(!_data || _data.locked) return;
 
-    for(const _key in data) {
-        if(pObject.isWriteOnlyProperty(data, _key)) continue;
-        _data.data[_key] = data[_key];
+    switch(typeof data) {
+        case "string":
+        case "number":
+        case "bigint":
+        case "boolean":
+        case "symbol":
+        case "function":
+        case "undefined": {
+            _data.data[_$key] = data;
+            _data.primary = true;
+            break;
+        }
+        case "object": {
+            if(!data) {
+                _data.data[_$key] = null;
+                _data.primary = true;
+                break;
+            }
+            if(Array.isArray(data)) {
+                _data.data[_$key] = data;
+                _data.primary = true;
+                break;
+            }
+            for(const _key in data) {
+                if(pObject.isWriteOnlyProperty(data, _key)) continue;
+                _data.data[_key] = data[_key];
+            }
+            _data.primary = false;
+            break;
+        }
     }
+    console.log(`Json.param.set: ${target.name} => ${Json.stringify(_data.data)}`);
 }
 
-Json.param.get = function<_TObject extends object>(target: JsonAsset): _TObject | undefined {
-    const _data = _jpget(target);
-    return _data ? _data.data as _TObject : undefined;
+Json.param.get = function<_TObject>(target: JsonAsset): _TObject | undefined {
+    const _data = _$jpget(target);
+    return _data ? (_data.primary ? _data.data[_$key] : _data.data) : undefined;
+}
+
+Json.param.lock = function(target: JsonAsset, status: boolean = true) {
+    const _data = _$jpget(target);
+    if(!_data) return;
+    _data.locked = status;
 }
 
 Json.event.add = function(asset, ...ls: pFlex.THandler[]) {
