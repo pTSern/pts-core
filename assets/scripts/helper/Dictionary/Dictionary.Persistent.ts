@@ -9,7 +9,7 @@ interface _IMap<_TValue> {
 type _ISetOpt<_TValue> = {
     state: number
     onSuccess?: pFlex.TFunc<[_TValue], void>
-    onFail?: pFlex.TFunc<[number], void>
+    onFail?: pFlex.TFunc<[_TValue], void>
 
 } | number
 
@@ -38,7 +38,7 @@ export class Dictionary_Persistent<_TKey extends pFlex.TKey, _TValue> {
 
         if (_cur) {
             if (_cur.state < _state) {
-                if (!_is) state.onFail?.(_cur.state);
+                if (!_is) state.onFail?.(_cur.value);
                 return;
             }
             _cur.value = value;

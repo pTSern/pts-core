@@ -87,7 +87,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
     protected __preload(): void {
         switch(this.mode) {
             case _EMode.Set: {
-                Config_Smart._$pool.set(this.id, this.target, this.state);
+                Config_Smart._$pool.set(this.id, this.target, { state: this.state, onFail: _ => this.target = _ });
                 break;
             }
             case _EMode.Get: {
