@@ -26,7 +26,7 @@ export abstract class Smart_Label_Hooker<_TType> extends Editor_PleaseOverride {
 
     protected __preload(): void {
         this._label = this.getComponent(Label);
-        pEngine.Json.add(this.onChangerLookup, { func: this._actLookUpBinder, binder: this });
+        pEngine.Json.event.add(this.onChangerLookup, { func: this._actLookUpBinder, binder: this });
         this._onPreLoad?.();
     }
 

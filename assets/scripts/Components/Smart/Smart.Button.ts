@@ -12,7 +12,7 @@ export class Smart_Button extends Component {
 
     @editor_property(undefined, { kill: true })
     protected get __$see() {
-        return pEngine.Json.previewer(this.onClicks[0]);
+        return pEngine.Json.event.previewer(this.onClicks[0]);
     }
 
     protected __preload(): void {
@@ -28,6 +28,6 @@ export class Smart_Button extends Component {
     }
 
     protected _onClick() {
-        pEngine.Json.invoke(this.onClicks);
+        pEngine.Json.event.invoke(this.onClicks);
     }
 }

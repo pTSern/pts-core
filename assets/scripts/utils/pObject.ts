@@ -106,6 +106,12 @@ export function isReadOnlyProperty(obj: any, propName: string): boolean {
     return false;
 }
 
+export function isWriteOnlyProperty(obj: any, propName: string): boolean {
+    const desc = Object.getOwnPropertyDescriptor(obj, propName);
+    if(!desc) return false;
+    return typeof desc.set === 'function' && typeof desc.get === 'undefined';
+}
+
 export function actChainBinder(chain: pFlex.TArray<string>, global: any = window, def: pFlex.TFunc<[string], any> = () => {}) {
     let _chains: string[] = null
 

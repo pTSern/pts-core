@@ -93,6 +93,5 @@ export class Dictionary_Persistent<_TKey extends pFlex.TKey, _TValue> {
             const _cur = this._$map[_key];
             nullable || _cur ? callback(_key, _cur.value) : null;
         }
-
     }
 }

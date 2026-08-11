@@ -74,8 +74,8 @@ export function group(level: _TLogLevel, opt: string | _ILogOption, ...args: any
     if(level === 'DEV' && !CC.DEV) return;
 
     const { title, color = "#3498db", weight = "bold" } = typeof opt === 'string' ? { title: opt } : opt;
-    console.groupCollapsed(`%c ${title}`, `color: ${color}; font-weight: ${weight}`);
-    args.forEach(arg => console.log(...arg));
+    console.group(`%c ${title}`, `color: ${color}; font-weight: ${weight}`);
+    args.forEach(_args => console.log(..._args));
     console.groupEnd();
 }
 
