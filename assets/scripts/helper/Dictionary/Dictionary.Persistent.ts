@@ -37,7 +37,7 @@ export class Dictionary_Persistent<_TKey extends pFlex.TKey, _TValue> {
         const _cur = this._$map[key];
 
         if (_cur) {
-            if (_cur.state < _state) {
+            if (_cur.state >= _state) {
                 if (!_is) state.onFail?.(_cur.value);
                 return;
             }

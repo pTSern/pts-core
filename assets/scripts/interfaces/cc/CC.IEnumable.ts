@@ -1,3 +1,4 @@
+import { Enum } from "cc";
 import * as pConst from "../../utils/pConst";
 
 export type CC_IEnumable<_TKey extends pFlex.TKey> = {
@@ -7,17 +8,11 @@ export type CC_IEnumable<_TKey extends pFlex.TKey> = {
 export type CC_IEnumList<_TKey extends pFlex.TKey, _TValue = any> = { name: _TKey, value: _TValue }
 
 function _is_CC_IEnumable<_TKey extends pFlex.TKey>(target: any | Record<_TKey, any>): target is CC_IEnumable<_TKey> {
-    if(!target) return false;
-
-    if(typeof target === 'object') {
-        return '__enums__' in target
-    }
-
-    return false;
+    return target && Object.prototype.hasOwnProperty.call(target, '__enums__')
 }
 
 export const CC_IEnumable = Object.assign(_is_CC_IEnumable, {
-    is: _is_CC_IEnumable,
+    is: Enum.isEnum,
     generator: function<_TKey extends pFlex.TKey>(target: Record<_TKey, any> | _TKey[]): CC_IEnumable<_TKey> {
         const _obj = { __enums__: null } as CC_IEnumable<_TKey>
         if(!target) return _obj;

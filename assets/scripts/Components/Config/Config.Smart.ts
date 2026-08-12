@@ -33,6 +33,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
     protected _$lock: boolean = false;
     protected _$seal: boolean = false;
     protected _$max: number = 0;
+    protected _$creator: pFlex.TFunc<[number], _TObject> = null
     protected _$sid: string = null;
 
     @property({ type: _EMode })
@@ -117,7 +118,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
             this.hid.lock(this._$sid);
         }
 
-        this.target.max(this._$max);
+        this.target.max(this._$max, this._$creator);
         this._$seal && this.target.seal();
 
         switch(this._filter) {

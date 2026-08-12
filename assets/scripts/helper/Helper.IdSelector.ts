@@ -14,6 +14,9 @@ export class Helper_IdSelector extends Editor_Smart_SelfFocus {
     get sid() { return this._sid }
     set sid(x) { this._sid = x }
 
+    @property({ visible: true, group: pConst.GROUPS.OPTION })
+    protected _$lock: boolean = false;
+
     @property({ type: JsonAsset })
     protected _data: JsonAsset = null;
 
@@ -25,34 +28,23 @@ export class Helper_IdSelector extends Editor_Smart_SelfFocus {
         this.focus()
     }
 
-    @property({ readonly: true })
-    protected _$lock: boolean = false;
-
     lock(id: string) {
         this._sid = id;
         this._$lock = true;
     }
 
     focus(): void {
-        if(this._$lock) {
-            this._data = null;
-            CCClass.Attr.setClassAttr(this, 'data', 'readonly', true);
-            CCClass.Attr.setClassAttr(this, 'data', 'visible', false);
-            CCClass.Attr.setClassAttr(this, 'sid', 'readonly', true);
-        }
+        CCClass.Attr.setClassAttr(this, 'data', 'readonly', this._$lock);
+        CCClass.Attr.setClassAttr(this, 'sid', 'readonly', this._$lock);
+        CCClass.Attr.setClassAttr(this, 'sid', 'type', (this._$lock || !this._data) ? undefined : 'Enum');
 
-        if(!this._data) {
-            CCClass.Attr.setClassAttr(this, 'sid', 'type', '');
-            return;
-        }
-
+        if(!this._data) return;
         const _json = this._data.json;
         if(!_json) return;
 
         const _keys = Object.keys(_json);
         const _cce = CC_EnumList(_keys);
 
-        CCClass.Attr.setClassAttr(this, 'sid', 'type', 'Enum');
         CCClass.Attr.setClassAttr(this, 'sid', 'enumList', _cce);
     }
 }

@@ -12,6 +12,7 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
     @property({ readonly: true, visible() { return this._max > 0 } })
     protected _max: number = 0;
+    protected _creator: pFlex.TFunc<[number], _TObject> = null;
 
     @property({ readonly: true })
     protected _seal: boolean = false;
@@ -22,9 +23,6 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
     get list() { return this._list }
     set list(x) {
         this._list = x;
-        if(this._max > 0 && (this._list.length > this._max || this._list.length <= 0)) {
-            this._list.length = this._max
-        }
         this.focus();
     }
 
@@ -35,8 +33,9 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
         this._filter = type;
     }
 
-    max(max: number) {
+    max(max: number, creator: pFlex.TFunc<[number], _TObject> = null) {
         this._max = max;
+        this._creator = creator;
     }
 
     seal() {
@@ -65,12 +64,9 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
         if(!_ctor) return;
 
         for(let i = 0; i < this._list.length; i ++) {
-            const _ret = this._list[i];
-            if(_ret !== null && _ret instanceof _ctor) {
-                continue;
-            }
-            this._list[i] = new _ctor() as _TObject;
+            this._list[i] = this._list[i] || (this._creator ? this._creator(i) : new _ctor()) as _TObject;
         }
+        this._max > 0 && (this._list.length = Math.max(0, this._max));
 
         const _max = Math.max(0, this._list.length - 1);
         CCClass.Attr.setClassAttr(this, 'intDefaultIndex', 'max', _max);
@@ -96,7 +92,7 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
     protected _key: pFlex.TFunc<[_TObject], string> = _ => typeof _['name'] == 'string' ? _['name'] : String(_)
 
-    get(index: number | string): _TObject | null {
+    get(index: number | string = 0): _TObject | null {
         if(typeof index == 'number') return this._list[index];
         if(typeof index == 'string') return this._map[index];
         return null;
