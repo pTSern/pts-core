@@ -1,9 +1,6 @@
 
-import { Enum } from "cc";
 import * as cc from "cc";
 import * as CC from "cc/env";
-import * as pArray from "./pArray";
-import { EDITOR_ONLY_IN_PREVIEW } from "./pConst";
 
 /**
  * pGlobal: System-wide utilities, logging, and miscellaneous helpers.
@@ -18,12 +15,6 @@ export function getCurrentTime(): string {
 // Enum Helpers
 export function isValidEnumValue<T extends object>(Enum: T, value: any): boolean {
     return Object.values(Enum).includes(value);
-}
-
-export function registerEnums(enums: pFlex.TArray<object>, editorOnly: boolean = false) {
-    if (editorOnly && !EDITOR_ONLY_IN_PREVIEW) return;
-    const list = pArray.flatter(enums);
-    list.forEach(e => Enum(e));
 }
 
 // Browser / System

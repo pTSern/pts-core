@@ -30,6 +30,6 @@ export {
 if(DEBUG) {
     window['pTS'] = window['pTS'] || js.createMap(true)
     window['pTS']['utils'] = {
-        pArray, pClass, pDriver, pMath, pString, pAsync, pObject, pEngine, pGlobal, pConst
+        pArray, pClass, pDriver, pMath, pString, pAsync, pObject, pEngine, pGlobal, pConst, pLazy
     }
 }

@@ -6,8 +6,8 @@ const { ccclass, property } = _decorator;
 export class Editor_Smart_SelfFocus {
     private _$isFocusing: boolean = false;
 
-    @property({ visible: true })
-    get __update() {
+    @property({ visible: false })
+    get __$update() {
         if(this._$isFocusing) {
             return false
         }
