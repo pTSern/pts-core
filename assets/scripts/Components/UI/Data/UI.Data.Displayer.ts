@@ -1,6 +1,7 @@
-import { _decorator, Component } from 'cc';
+import { _decorator, CCClass, Component } from 'cc';
 import { Smart_Label_Hooker } from '../../Smart/Label/Hooker/Smart.Label.Hooker';
 import { Data_Manager } from '../../../data/manager';
+import { CC_IEnumList } from '../../../interfaces/cc/CC.IEnumable';
 
 const { ccclass, property } = _decorator;
 
@@ -21,14 +22,39 @@ class _Helper<_TType> {
 
         this.hooker.set(_data as _TType);
     }
+
+    focus(list: CC_IEnumList<any, any>[]) {
+        CCClass.Attr.setClassAttr(this, 'key', 'type', 'Enum');
+        CCClass.Attr.setClassAttr(this, 'key', 'enumList', list);
+    }
 }
 
 @ccclass('UI_Data_Displayer')
-export class UI_Data_Displayer extends Component {
-    @property({ type: _Helper })
-    list: _Helper<any>[] = [];
+export class UI_Data_Displayer<_TList extends pFlex.TKey> extends Component {
+    @property({ type: _Helper, visible: false })
+    protected list: _Helper<_TList>[] = [];
+    @property({ type: _Helper, visible: true })
+    protected get _list() { return this.list; }
+    protected set _list(x) {
+        this.list = x;
+        this.onFocusInEditor();
+    }
+
+    protected static _$list: pFlex.TKey[] = null
 
     protected onEnable(): void {
         this.list.forEach(_helper => _helper.refresh());
+    }
+
+    onFocusInEditor(): void {
+        const _$list = this.constructor['_$list'] as pFlex.TKey[];
+        if(!_$list) return;
+
+        const _list = CC_IEnumList.generator(_$list);
+        this.list.forEach(_helper => _helper.focus(_list));
+    }
+
+    resetInEditor(): void {
+        this.onFocusInEditor();
     }
 }

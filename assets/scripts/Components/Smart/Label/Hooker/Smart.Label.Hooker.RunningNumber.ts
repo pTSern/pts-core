@@ -1,4 +1,4 @@
-import { _decorator, Label, macro, math, tween, Tween } from 'cc';
+import { _decorator, Label, math, tween, Tween } from 'cc';
 import { Type_EasingSelector } from '../../../Type/Type.Easing';
 import { pConst, pString, pClass, pGlobal } from 'db://pts-core/scripts/utils';
 import { Smart_Label_Hooker } from './Smart.Label.Hooker';
@@ -27,6 +27,8 @@ export class Smart_Label_Hooker_RunningNumber extends Smart_Label_Hooker<number>
         this._value = value;
         this._label.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(this._value) : this._value}${this.suffix}`;
     }
+
+    get() { return this._value }
 
     protected _tween: Tween<Smart_Label_Hooker_RunningNumber> = null;
 

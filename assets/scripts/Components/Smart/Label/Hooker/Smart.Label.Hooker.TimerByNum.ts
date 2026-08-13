@@ -13,6 +13,9 @@ export class Smart_Label_Hooker_TimerByNum extends Smart_Label_Hooker<number> {
     set(val: number): void {
         this._value = val;
     }
+    get(): number {
+        return this._value;
+    }
 
     protected _actLookUpBinder(...args: any[]): void {
     }

@@ -7,7 +7,7 @@ const { ccclass, property, requireComponent } = _decorator;
 
 @ccclass('Smart_Label_Hooker')
 @requireComponent(Label)
-export abstract class Smart_Label_Hooker<_TType> extends Editor_PleaseOverride {
+export abstract class Smart_Label_Hooker<_TType = any> extends Editor_PleaseOverride {
     protected static _$list: string[] = ['set'];
 
     @property({ group: pConst.GROUPS.CORE })
@@ -23,6 +23,7 @@ export abstract class Smart_Label_Hooker<_TType> extends Editor_PleaseOverride {
     onChangerLookup: JsonAsset[] = [];
 
     abstract set(val: _TType): void;
+    abstract get(): _TType;
 
     protected __preload(): void {
         this._label = this.getComponent(Label);
