@@ -12,6 +12,7 @@ export const IS_EDITOR = EDITOR;
 export const LOG_LEVEL = 0;
 
 const __pool__ = js.createMap(true);
+const __timer__ = js.createMap(true);
 
 // Constants
 export const VOID_FUNC = () => void 0;
@@ -19,6 +20,32 @@ export const ME_FUNC = function(_: any) { return _ }
 export const ARRAY_FUNC = function() { return [] };
 export const ENUM = Enum({})
 export const EMPTY = js.createMap(false);
+
+interface _ITimer {
+    DAY(amount?: number): number;
+    MINUTE(amount?: number): number;
+    SECOND(amount?: number): number;
+}
+
+export const TIMER = js.createMap(true) as _ITimer;
+TIMER.DAY = (amount = 1) => {
+    const _key = `day_${amount}`;
+    __timer__[_key] = __timer__[_key] || amount * 24 * 60 * 60 * 1000;
+
+    return __timer__[_key]
+}
+
+TIMER.MINUTE = (amount = 1) => {
+    const _key = `min_${amount}`;
+    __timer__[_key] = __timer__[_key] || amount * 60 * 1000;
+    return __timer__[_key]
+}
+
+TIMER.SECOND = (amount = 1) => {
+    const _key = `sec_${amount}`;
+    __timer__[_key] = __timer__[_key] || amount * 1000;
+    return __timer__[_key]
+}
 
 export function getNumFunc(num: number) {
     num = typeof num == 'number' ? num : 0

@@ -29,6 +29,16 @@ type _$IManager = {
     set<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey, K4 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3], k4: K4, v4: _$IGameData[K4]): Promise<void>
     set<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey, K4 extends _$TKey, K5 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3], k4: K4, v4: _$IGameData[K4], k5: K5, v5: _$IGameData[K5]): Promise<void>
 
+    // Single key add
+    add<_TKey extends _$TKey>(key: _TKey, value: pFlex.TFunc<[_$IGameData], _$IGameData[_TKey]>): Promise<_$IGameData[_TKey]>
+    add<_TKey extends _$TKey>(key: _TKey, value: _$IGameData[_TKey]): Promise<_$IGameData[_TKey]>
+
+    // Variadic key-value add overloads
+    add<K1 extends _$TKey, K2 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2]): Promise<void>
+    add<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3]): Promise<void>
+    add<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey, K4 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3], k4: K4, v4: _$IGameData[K4]): Promise<void>
+    add<K1 extends _$TKey, K2 extends _$TKey, K3 extends _$TKey, K4 extends _$TKey, K5 extends _$TKey>(k1: K1, v1: _$IGameData[K1], k2: K2, v2: _$IGameData[K2], k3: K3, v3: _$IGameData[K3], k4: K4, v4: _$IGameData[K4], k5: K5, v5: _$IGameData[K5]): Promise<void>
+
     all(_async?: false): _$IGameData
     all(_async: true): Promise<_$IGameData>
     all(_async?: boolean): _$IGameData | Promise<_$IGameData>
@@ -37,10 +47,10 @@ type _$IManager = {
     status(): _$TStatus
 
     // Eventify methods
-    on<_TKey extends 'set' | 'get'>(event: _TKey, ...funcs: any[]): void
-    once<_TKey extends 'set' | 'get'>(event: _TKey, ...funcs: any[]): void
-    off<_TKey extends 'set' | 'get'>(event: _TKey, ...funcs: any[]): void
-    clear(event: 'set' | 'get'): void
+    on<_TKey extends 'set' | 'get' | 'add'>(event: _TKey, ...funcs: any[]): void
+    once<_TKey extends 'set' | 'get' | 'add'>(event: _TKey, ...funcs: any[]): void
+    off<_TKey extends 'set' | 'get' | 'add'>(event: _TKey, ...funcs: any[]): void
+    clear(event: 'set' | 'get' | 'add'): void
 }
 
 const _$ = {
@@ -89,6 +99,23 @@ export const Data_Manager = pTS.bridge.replican<_$IGameData>({
             const _k = key as _$TKey;
             const _had = map.has(_k), _old = map.get(_k);
             const _val = typeof value === 'function' ? value(_$mobj()) : value;
+
+            map.set(_k, _val);
+            try { await _$persist(_k, _val); return _val; }
+            catch (e) { _had ? map.set(_k, _old) : map.delete(_k); throw e; }
+        },
+        async add(key: string, value: any, map: Map<string, any>) {
+            _$.map = map;
+            const _k = key as _$TKey;
+            const _had = map.has(_k), _old = map.get(_k);
+            let _val: any;
+            if (typeof value === 'function') {
+                _val = value(_$mobj());
+            } else if (typeof value === 'number') {
+                _val = (typeof _old === 'number' ? _old : 0) + value;
+            } else {
+                _val = value;
+            }
 
             map.set(_k, _val);
             try { await _$persist(_k, _val); return _val; }

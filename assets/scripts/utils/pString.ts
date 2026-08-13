@@ -63,8 +63,8 @@ export function formatKMB(num: number, positive: string = "", negative: string =
  * Format number with dot separators (e.g., 1.000.000).
  * Time: O(n) - Single regex pass.
  */
-export function formatWithDots(num: number): string {
-    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+export function formatWithDots(num: number, dot: string = "."): string {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, dot);
 }
 
 /**

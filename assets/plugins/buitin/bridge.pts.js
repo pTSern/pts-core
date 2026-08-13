@@ -43,6 +43,57 @@ if (_$) {
             return isAsync ? Promise.all(_promises) : undefined;
         };
 
+        function _aone(rawKey, value) {
+            const _key = keyGetter ? keyGetter(rawKey) : rawKey;
+            const _old = isEventify ? _container.get(_key) : undefined;
+            let _out;
+            if (isAsync) {
+                const _fn = (opt.asynctify && typeof opt.asynctify.add === "function") ? opt.asynctify.add : opt.asynctify.set;
+                _out = _fn(_key, value, _container);
+            } else {
+                const _cur = _container.get(_key);
+                if (typeof value === "number") {
+                    _container.set(_key, (typeof _cur === "number" ? _cur : 0) + value);
+                } else if (typeof value === "function") {
+                    _container.set(_key, value(_container));
+                } else {
+                    _container.set(_key, value);
+                }
+            }
+            if (isEventify) {
+                _emit("add", _key, value, _old);
+                if (isAsync && _out && typeof _out.then === "function") {
+                    _out.then((_res) => {
+                        const _new = _res !== undefined ? _res : _container.get(_key);
+                        _emit("set", _key, _new, _old);
+                    });
+                } else {
+                    const _new = _container.get(_key);
+                    _emit("set", _key, _new, _old);
+                }
+            }
+            return _out;
+        }
+
+        _.add = function (...args) {
+            if (args.length === 0) return;
+            if (args.length === 2 && typeof args[0] === "string") {
+                return _aone(args[0], args[1]);
+            }
+            if (args.length % 2 !== 0) {
+                console.error("[pTS.bridge] add expected key-value pairs (even argument count), got:", args.length);
+            }
+            const _promises = isAsync ? [] : null;
+            for (let i = 0; i < args.length - 1; i += 2) {
+                const res = _aone(args[i], args[i + 1]);
+                if (isAsync && res && typeof res.then === "function") {
+                    _promises.push(res);
+                }
+            }
+            return isAsync ? Promise.all(_promises) : undefined;
+        };
+
+
         function _getOneSync(rawKey, creator) {
             const _key = keyGetter ? keyGetter(rawKey) : rawKey;
             let _out = _container.get(_key);
