@@ -2,7 +2,6 @@
 import * as pArray from "./pArray";
 import { randomRangeInt, js } from 'cc'
 
-const _$regex = /\{\{|\}\}|\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g;
 const _$match = /^([a-zA-Z])(\d+)?$/;
 
 /**
@@ -109,7 +108,7 @@ export function extractNumbers(str: string): number[] {
 export function format(format: string, ...args: any[]) {
     if(!format) return "";
 
-    return format.replace(_$regex, (_match, _idx, _align, _format) => {
+    return format.replace(_$regex.format, (_match, _idx, _align, _format) => {
         if(_match === "{{") return "{"
         if(_match === "}}") return "}"
 
@@ -200,4 +199,16 @@ function _$format(value: any, specifier?: string): string {
             return String(value);
         }
     }
+}
+
+const _$regex = {
+    number: /\d+/g,
+    format: /\{\{|\}\}|\{(\d+)(?:,(-?\d+))?(?::([^}]+))?\}/g
+}
+
+export function getAllNumbers(str: string): number[] {
+    const _int = str.match(_$regex.number);
+
+    if(!_int) return []
+    return _int.map(Number);
 }

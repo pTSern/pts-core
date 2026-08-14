@@ -46,7 +46,7 @@ function _is_CC_IEnumList<_TKey extends pFlex.TKey, _TValue extends pFlex.TKey>(
 
 export const CC_IEnumList = Object.assign(_is_CC_IEnumList, {
     is: _is_CC_IEnumList,
-    generator: function<_TKey extends pFlex.TKey, _TValue = _TKey>(target: Record<_TKey, any> | _TKey[], _out: pFlex.TFunc<[_TKey], _TValue> = pConst.ME_FUNC as unknown as pFlex.TFunc<[_TKey], _TValue>): CC_IEnumList<_TKey, _TValue>[] {
+    generator: function<_TKey extends pFlex.TKey, _TValue = _TKey>(target: Record<_TKey, any> | _TKey[], _out: pFlex.TFunc<[any], _TValue> = pConst.ME_FUNC as unknown as pFlex.TFunc<[_TKey], _TValue>): CC_IEnumList<_TKey, _TValue>[] {
         let _arr: CC_IEnumList<_TKey, _TValue>[] = [];
         if(!target) return _arr;
 
@@ -56,7 +56,7 @@ export const CC_IEnumList = Object.assign(_is_CC_IEnumList, {
             }
         } else {
             for(const _key in target) {
-                _arr.push({ name: _key as _TKey, value: _out(_key as _TKey) })
+                _arr.push({ name: _key as _TKey, value: _out(target[_key] as _TKey) })
             }
         }
 
