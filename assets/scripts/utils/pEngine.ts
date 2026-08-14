@@ -5,6 +5,7 @@ import * as pArray from "./pArray";
 import * as pClass from './pClass';
 import * as pObject from "./pObject";
 import * as pConst from "./pConst";
+import * as pGlobal from "./pGlobal";
 import * as cc from 'cc'
 
 /**
@@ -48,7 +49,7 @@ namespace _IJson {
         export interface IMethods {
             add: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
             remove: (asset: pFlex.TArray<JsonAsset>, ...ls: pFlex.THandler[]) => void;
-            invoke: (asset: pFlex.TArray<JsonAsset>, ...args: any[]) => void;
+            invoke: (asset: pFlex.TArray<JsonAsset>, ...args: any[]) => any[];
             seal: (asset: pFlex.TArray<JsonAsset>, status: boolean) => void;
             clean: (asset: pFlex.TArray<JsonAsset>) => void;
             previewer(data: JsonAsset): any
@@ -338,6 +339,7 @@ Json.event.invoke = function(asset, ...args: any[]) {
     const _assets = pArray.flatter(asset);
     for(const _ret of _assets) {
         const d = _get(_ret);
+        pGlobal.log('DEV', '[Json.event.invoke] >>', _ret.name, ' with args ', ...args);
         if (d) return pClass.emit(d.listeners, ...args);
     }
 }
