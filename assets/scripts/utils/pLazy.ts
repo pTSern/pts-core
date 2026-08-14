@@ -1,5 +1,15 @@
-import { Enum } from "cc";
+import { Enum, js } from "cc";
 import * as pArray from "./pArray";
+import * as pConst from "./pConst";
+
+interface _ITimer {
+    getDayDif(a: number, b: number): number
+}
+export const timer = js.createMap(true) as _ITimer;
+timer.getDayDif = function(a, b) {
+    return Math.floor(a/pConst.TIMER.DAY()) - Math.floor(b/pConst.TIMER.DAY());
+}
+
 
 function _enums(obj: pFlex.TArray<object>, ...objs: object[]): void {
     objs = pArray.flat(obj, objs);
