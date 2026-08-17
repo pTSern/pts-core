@@ -1,7 +1,8 @@
 import { _decorator, CCClass, Component, js, JsonAsset } from "cc";
 import { pClass, pConst, pDriver, pEngine } from "db://pts-core/scripts/utils";
 import { CC_IEnumList } from "../../interfaces/cc/CC.IEnumable";
-import { BUILD, COCOS_RUNTIME } from "cc/env";
+import { BUILD } from "cc/env";
+import { Event_Flexer } from "./Event.Flexer";
 
 const { property, ccclass } = _decorator
 
@@ -12,8 +13,8 @@ class _Helper<_TKey extends pFlex.TKey> {
     @property({ type: pConst.ENUM })
     key: _TKey = "" as _TKey
 
-    @property({ type: JsonAsset })
-    events: JsonAsset[] = []
+    @property({ type: Event_Flexer })
+    flex: Event_Flexer = new Event_Flexer()
 
     focus(focus: CC_IEnumList<_TKey, _TKey>[]) {
         CCClass.Attr.setClassAttr(this, 'key', 'type', 'Enum');
@@ -21,7 +22,7 @@ class _Helper<_TKey extends pFlex.TKey> {
     }
 
     emit(...args: any[]) {
-        return pEngine.Json.event.invoke(this.events, ...args);
+        return this.flex.emit(...args);
     }
 }
 
