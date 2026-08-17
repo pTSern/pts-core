@@ -31,7 +31,11 @@ export class Smart_ProgressBar extends ProgressBar {
     }
 
     set progress(value: number) {
-        super.progress = value;
+        if (this._progress === value) {
+            return;
+        }
+
+        this._progress = value;
 
         for (let i = this.labels.length - 1; i >= 0; i--) {
             const _lab = this.labels[i];
@@ -42,6 +46,8 @@ export class Smart_ProgressBar extends ProgressBar {
             _lab.string = this.prefix + (value * this.multiplier).toFixed(0) + this.suffix;
         }
         console.log(`Smart_ProgressBar: progress set to ${value}, labels updated.`);
+
+        this._updateBarStatus();
     }
 
     get progress(): number {

@@ -34,5 +34,8 @@ export abstract class Smart_Label_Hooker<_TType = any> extends Editor_PleaseOver
     protected abstract _actLookUpBinder(...args: any[]): void;
     protected _onPreLoad?(): void;
 
+    protected onDestroy(): void {
+        pEngine.Json.event.remove(this.onChangerLookup, { func: this._actLookUpBinder, binder: this });
+    }
 
 }

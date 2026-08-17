@@ -49,6 +49,11 @@ export class Helper_Spawner {
         pEngine.Json.event.add(this.evtAutoRecycle, { func: this._onRecycleAll, binder: this } )
     }
 
+    destroy() {
+        pEngine.Json.event.remove(this.evtRecycle, { func: this._onRecycle, binder: this });
+        pEngine.Json.event.remove(this.evtAutoRecycle, { func: this._onRecycleAll, binder: this } )
+    }
+
     protected _onRecycleAll() {
         _pool.puts(this.papa.children);
     }
