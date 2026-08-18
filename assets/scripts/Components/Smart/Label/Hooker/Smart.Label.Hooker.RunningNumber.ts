@@ -20,7 +20,7 @@ export class Smart_Label_Hooker_RunningNumber extends Smart_Label_Hooker<number>
     easing: Type_EasingSelector = new Type_EasingSelector();
 
     @editor_property()
-    protected _value: number = -1;
+    protected _value: number = 999.999;
 
     get value() { return this._value; }
     set value(value: number) {

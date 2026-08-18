@@ -1,6 +1,6 @@
 
-import { _decorator, NodePool, Node, instantiate, Prefab, Component, CCString } from "cc";
-import { pArray } from "../utils";
+import { _decorator, NodePool, Node, instantiate, Prefab, Component, CCString, js, UITransform, randomRange, Vec3 } from "cc";
+import { pArray, pEngine } from "../utils";
 import { editor_ccclass, editor_property } from "../utils/pClass";
 
 interface _IHandler {
@@ -13,6 +13,8 @@ interface _IOpt {
     template: Prefab;
     batch?: number
 }
+
+type _TSpawnOpt = { pooler?: pFlex.TKey } & Parameters<typeof pEngine.NodeUtils.create>[0]
 
 @editor_ccclass("Pooler_Node")
 export class Pooler_Node extends NodePool {
@@ -32,6 +34,46 @@ export class Pooler_Node extends NodePool {
         const _ret = new Pooler_Node(opt?.comp || null);
         _ret._template = opt?.template || null
         typeof opt?.batch === 'number' && _ret.generate(opt.batch);
+        return _ret;
+    }
+
+    static Event = {
+        RECYCLE: '$_NODE_RECYCLE'
+    }
+
+    static spawn(rect: UITransform, amount: number, opt: _TSpawnOpt, act?: pFlex.TFunc<[Node], void>) {
+        const { width, height, anchorPoint  } = rect;
+        const _pool = Pooler_Node.pool(opt.pooler);
+        const _nodes: Node[] = []
+
+        for (let i = 0; i < amount; i++) {
+            const _localX = randomRange(-anchorPoint.x * width, (1 - anchorPoint.x) * width);
+            const _localY = randomRange(-anchorPoint.y * height, (1 - anchorPoint.y) * height);
+
+            const _worldPos = rect.convertToWorldSpaceAR(new Vec3(_localX, _localY, 0));
+            console.log('Pooler_Node.spawn', _worldPos, _localX, _localY, width, height, anchorPoint);
+
+            const _node = _pool.get() || pEngine.NodeUtils.create(opt).node;
+            _node.once(Pooler_Node.Event.RECYCLE, _ => _pool.put(_node));
+            opt.parent && (_node?.parent?.uuid && _node.parent.uuid !== opt.parent.uuid) && opt.parent.addChild(_node);
+            _node.setWorldPosition(_worldPos);
+
+            act && act(_node);
+            _nodes.push(_node);
+        }
+        return _nodes;
+    }
+
+    private static _$pool: Record<pFlex.TKey, Pooler_Node> = js.createMap(true);
+    private static _$shared: pFlex.TKey = Symbol('Pooler_Node.shared')
+    static pool(key?: pFlex.TKey) {
+        if(!key) key = Pooler_Node._$shared;
+        let _ret = Pooler_Node._$pool[key];
+
+        if(!_ret) {
+            _ret = Pooler_Node._$pool[key] = new Pooler_Node();
+        }
+
         return _ret;
     }
 
@@ -81,3 +123,4 @@ export class Pooler_Node extends NodePool {
 
     }
 }
+
