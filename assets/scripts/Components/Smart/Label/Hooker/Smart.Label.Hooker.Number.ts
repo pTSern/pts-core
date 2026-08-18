@@ -22,7 +22,7 @@ export class Smart_Label_Hooker_Number extends Smart_Label_Hooker<number> {
     set(val: number): void {
         if(this._value === val) return;
         this._value = val;
-        this._label.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(val) : this.isUseKMBFormat ? pString.formatWithDots(val) : val}${this.suffix}`;
+        this._label.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(val) : this.isUseDotFormat ? pString.formatWithDots(val, this.dot) : val}${this.suffix}`;
     }
     get() { return this._value }
 
