@@ -69,13 +69,13 @@ export function formatWithDots(num: number, dot: string = "."): string {
 /**
  * Convert number to custom radix format (e.g., 10,50 for 10.5).
  */
-export function formatWithCommas(value: number, radix: number = 100): string {
+export function formatWithCommas(value: number, radix: number = 100, dot: string = ","): string {
     const scaled = Math.round((value * 100) / radix);
     const integerPart = Math.floor(scaled / 100);
     const decimalPart = scaled % 100;
     if (decimalPart === 0) return integerPart.toString();
     const decStr = decimalPart < 10 ? `0${decimalPart}` : String(decimalPart);
-    return `${integerPart},${decStr.replace(/0+$/, '')}`;
+    return `${integerPart}${dot}${decStr.replace(/0+$/, '')}`;
 }
 
 export interface IStringReplacer {
