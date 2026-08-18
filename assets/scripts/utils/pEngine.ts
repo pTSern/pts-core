@@ -7,6 +7,7 @@ import * as pObject from "./pObject";
 import * as pConst from "./pConst";
 import * as pGlobal from "./pGlobal";
 import * as cc from 'cc'
+import * as pMath from "./pMath";
 
 /**
  * pEngine: Comprehensive Cocos Creator engine utilities for Nodes, Components, and Assets.
@@ -69,7 +70,7 @@ namespace _IJson {
     export namespace Param {
         export interface IMethods {
             set(target: JsonAsset, data: any): void
-            get<_TObject>(target: JsonAsset): _TObject | undefined
+            get<_TObject>(target: JsonAsset): Partial<_TObject> | undefined
             lock(target: JsonAsset, status?: boolean): void
             previewer(data: JsonAsset): any
         }
@@ -363,7 +364,7 @@ interface _IAttr {
 
 interface _INodeUtils {
     getCCProps: (target: pFlex.TFunc | object, ...types: pFlex.TCtor[]) => string[];
-    create: <T extends pFlex.TCtor<any, any>[]>(opt: { name?: string | ((n: Node) => string), layer?: Layers.Enum, parent?: Node, active?: boolean, pos?: TFlexPosition, fab?: Prefab, scale?: IVec3Like, rotation?: IVec3Like, isDisconnectPrefabLink?: boolean, isNotKeepWorldTransform?: boolean }, configs?: { [K in keyof T]: { type: T[K], opt?: Partial<any>, multiple?: boolean, modifier?: (i: any) => void } }) => { node: Node; comps: any[] };
+    create: <T extends pFlex.TCtor<any, any>[]>(opt: _INodeUtilsCreator, configs?: { [K in keyof T]: { type: T[K], opt?: Partial<any>, multiple?: boolean, modifier?: (i: any) => void } }) => { node: Node; comps: any[] };
     setPosition: <T extends IVec3Like>(target: TFlexCCNode, pos: TFlexPosition<T>, dif?: T) => void;
     getNodeInfo: (target: TFlexCCNode) => any;
     search: <T extends Component>(cls: pFlex.TCtor<any, T>, root?: Node) => T | null;
@@ -372,6 +373,19 @@ interface _INodeUtils {
     getAttr(target: pFlex.TFunc | object): Record<string, _IAttr>
     getLocalPosition<TPosition extends IVec3Like>(_self: TFlexCCNode, _target: TFlexPosition<TPosition>, _dif?: TPosition): cc.Vec3
     getNodePath(target: TFlexCCNode): string
+}
+
+interface _INodeUtilsCreator {
+    name?: string | pFlex.TFunc<[Node], string>;
+    layer?: Layers.Enum;
+    parent?: Node;
+    active?: boolean;
+    pos?: TFlexPosition;
+    fab?: pFlex.TArray<Prefab>;
+    scale?: IVec3Like;
+    rotation?: IVec3Like;
+    isDisconnectPrefabLink?: boolean;
+    isNotKeepWorldTransform?: boolean
 }
 
 const __$lookup_ = new Map<string, Node | Component>();
@@ -625,24 +639,26 @@ NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.T
     return _props;
 }
 
-NodeUtils.create = function<T extends pFlex.TCtor<any, any>[]>(opt: { name?: string | ((n: Node) => string), layer?: Layers.Enum, parent?: Node, active?: boolean, pos?: TFlexPosition, fab?: Prefab, scale?: IVec3Like, rotation?: IVec3Like, isDisconnectPrefabLink?: boolean, isNotKeepWorldTransform?: boolean }, configs?: { [K in keyof T]: { type: T[K], opt?: Partial<any>, multiple?: boolean, modifier?: (i: any) => void } }) {
-    const node = opt.fab ? instantiate(opt.fab) : new Node();
+NodeUtils.create = function<T extends pFlex.TCtor<any, any>[]>(opt: _INodeUtilsCreator, configs?: { [K in keyof T]: { type: T[K], opt?: Partial<any>, multiple?: boolean, modifier?: (i: any) => void } }) {
+    const node = opt.fab ? Array.isArray(opt.fab) ? instantiate(pMath.rand(opt.fab)) : instantiate(opt.fab) : new Node();
     if (opt.name) node.name = typeof opt.name === 'function' ? opt.name(node) : opt.name;
     if (opt.isDisconnectPrefabLink && EDITOR) (node as any)._prefab = null;
     node.layer = opt.layer ?? Layers.Enum.UI_2D;
     node.active = opt.active ?? true;
     if (opt.scale) node.setScale(opt.scale.x, opt.scale.y, opt.scale.z);
     if (opt.rotation) node.setRotationFromEuler(opt.rotation.x, opt.rotation.y, opt.rotation.z);
-    const comps = configs ? configs.map(c => {
-        const i = c.multiple ? node.addComponent(c.type) : (node.getComponent(c.type) || node.addComponent(c.type));
-        if (c.opt) pObject.assign(i, c.opt);
-        if (c.modifier) c.modifier(i);
-        return i;
-    }) : [];
+
     if (opt.parent) {
         node.setParent(opt.parent, !opt.isNotKeepWorldTransform);
         if (opt.pos) NodeUtils.setPosition(node, opt.pos);
     }
+
+    const comps = configs ? configs.map(c => {
+        const i = c.multiple ? node.addComponent(c.type) : (node.getComponent(c.type) || node.addComponent(c.type));
+        if (c.opt) pObject.assign(i, c.opt);
+        if (c.modifier) cc.misc.callInNextTick( () => c.modifier(i));
+        return i;
+    }) : [];
     return { node, comps: comps as any };
 }
 

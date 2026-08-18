@@ -19,15 +19,25 @@ Enum(_EMode);
 export class Config_Smart<_TObject> extends Component implements Object_IIdHolder<string> {
 
     private static _$pool = new Dictionary_Persistent<string, Helper_Selector_Smart<any>>();
+    private static _$waiters = js.createMap(true);
     static get<_TObject>(key: string) {
         return Config_Smart._$pool.get(key) as Helper_Selector_Smart<_TObject>;
     }
 
-    static wait<_TObject>(key: string) {
-        return new Promise<Helper_Selector_Smart<_TObject>>(_rs => {
-            const _out = Config_Smart._$pool.get(key, _ => _rs(_));
-            _out && _rs(_out as Helper_Selector_Smart<_TObject>);
-        })
+    static wait<_TObject>(key: string | Helper_IdSelector): Promise<Helper_Selector_Smart<_TObject>> {
+        if(key instanceof Helper_IdSelector) {
+            key = key.sid;
+        }
+
+        let _out = Config_Smart._$waiters[key];
+        if(!_out) {
+            _out = Config_Smart._$waiters[key] = new Promise<Helper_Selector_Smart<_TObject>>(_rs => {
+                const _ret = Config_Smart._$pool.get(key, _ => _rs(_));
+                _ret && _rs(_ret as Helper_Selector_Smart<_TObject>);
+            })
+        }
+
+        return _out;
     }
 
     protected _$lock: boolean = false;
