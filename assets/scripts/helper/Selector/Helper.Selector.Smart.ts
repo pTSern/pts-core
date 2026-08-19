@@ -107,7 +107,7 @@ export class Helper_Selector_Smart<_TObject> extends Editor_Smart_SelfFocus {
 
     key(func: pFlex.TFunc<[_TObject], string> | string) {
         if(typeof func == 'function') { this._key = func; return }
-        if(typeof func == 'string') { this._key = _ => _[func]; return }
+        if(typeof func == 'string') { this._key = function(_: _TObject) { return _[func]}; return }
     }
 }
 

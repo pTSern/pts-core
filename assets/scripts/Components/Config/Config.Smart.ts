@@ -5,6 +5,7 @@ import { Helper_Selector_Smart } from '../../helper/Selector/Helper.Selector.Sma
 import { pClass } from '../../utils';
 import { CC_EnumList } from '../../interfaces/cc/CC.IEnumable';
 import { Dictionary_Persistent } from '../../helper/Dictionary/Dictionary.Persistent';
+import { editor_property } from '../../utils/pClass';
 
 const { ccclass, property } = _decorator;
 
@@ -76,7 +77,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         this.onFocusInEditor();
     }
 
-    @property({})
+    @editor_property()
     protected _key: string = 'name'
 
     @property({ type: Helper_Selector_Smart })
@@ -98,7 +99,10 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
     protected __preload(): void {
         switch(this.mode) {
             case _EMode.Set: {
-                Config_Smart._$pool.set(this.id, this.target, { state: this.state, onFail: _ => this.target = _ });
+                Config_Smart._$pool.set(this.id, this.target, { state: this.state, onFail: _ => this.target = _, onSuccess: _ => {
+                    _.key(this._key);
+                    _.init()
+                } });
                 break;
             }
             case _EMode.Get: {
