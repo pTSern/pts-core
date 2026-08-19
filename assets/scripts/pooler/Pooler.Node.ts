@@ -2,6 +2,7 @@
 import { _decorator, NodePool, Node, instantiate, Prefab, Component, CCString, js, UITransform, randomRange, Vec3 } from "cc";
 import { pArray, pEngine } from "../utils";
 import { editor_ccclass, editor_property } from "../utils/pClass";
+import { Helper_IdSelector } from "../helper/Helper.IdSelector";
 
 interface _IHandler {
     unuse: pFlex.TFunc<void, void>
@@ -41,6 +42,19 @@ export class Pooler_Node extends NodePool {
         RECYCLE: '$_NODE_RECYCLE'
     }
 
+    static get(amount: number, opt: _TSpawnOpt) {
+        const _pool = Pooler_Node.pool(opt.pooler);
+
+        const _nodes: Node[] = []
+        for(let i = 0; i < amount; i++) {
+            const _node = _pool.get() || pEngine.NodeUtils.create(opt).node;
+            _node.once(Pooler_Node.Event.RECYCLE, _ => _pool.put(_node));
+            _nodes.push(_node);
+        }
+
+        return _nodes;
+    }
+
     static spawn(rect: UITransform, amount: number, opt: _TSpawnOpt, act?: pFlex.TFunc<[Node], void>) {
         const { width, height, anchorPoint  } = rect;
         const _pool = Pooler_Node.pool(opt.pooler);
@@ -51,7 +65,6 @@ export class Pooler_Node extends NodePool {
             const _localY = randomRange(-anchorPoint.y * height, (1 - anchorPoint.y) * height);
 
             const _worldPos = rect.convertToWorldSpaceAR(new Vec3(_localX, _localY, 0));
-            console.log('Pooler_Node.spawn', _worldPos, _localX, _localY, width, height, anchorPoint);
 
             const _node = _pool.get() || pEngine.NodeUtils.create(opt).node;
             _node.once(Pooler_Node.Event.RECYCLE, _ => _pool.put(_node));
@@ -66,7 +79,8 @@ export class Pooler_Node extends NodePool {
 
     private static _$pool: Record<pFlex.TKey, Pooler_Node> = js.createMap(true);
     private static _$shared: pFlex.TKey = Symbol('Pooler_Node.shared')
-    static pool(key?: pFlex.TKey) {
+    static pool(key?: pFlex.TKey | Helper_IdSelector) {
+        if(key instanceof Helper_IdSelector) key = key.sid;
         if(!key) key = Pooler_Node._$shared;
         let _ret = Pooler_Node._$pool[key];
 
