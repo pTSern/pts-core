@@ -77,7 +77,6 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         this.onFocusInEditor();
     }
 
-    @editor_property()
     protected _key: string = 'name'
 
     @property({ type: Helper_Selector_Smart })
