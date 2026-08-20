@@ -31,6 +31,7 @@ class _Helper<_TKey extends pFlex.TKey> {
 export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shared_Pool<pDriver.Handler<any>> implements pDriver.IDriver<_TInterfaces> {
     protected static _$bounces: readonly pFlex.TKey[] | pFlex.TKey[]
     protected static _$class: pFlex.TCtor<_Helper<keyof _$TInterfaces>> = _Helper
+    protected static _prefix: string = "Event_Driver_";
 
     @property({ type: _Helper })
     protected _helpers: _Helper<keyof _TInterfaces>[] = []
@@ -82,10 +83,11 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shar
     /**
      * NOTE: MUST CALL `super` on overriding
      */
-    protected _onPreLoad(): void {
+    protected __preload(): void {
         this.helpers.forEach(_ => this._$map[_.key] = _);
         BUILD && delete this.helpers;
-        [this.target, this._$key] = this.isShared ? [_$, _ => _] : [pDriver.Handler.create(), _ => `${this.uuid}_${String(_)}`]
+        [this.target, this._$key] = this.isShared ? [_$, _ => `${this.uuid}_${String(_)}`] : [pDriver.Handler.create(), _ => _]
+        super.__preload();
     }
 
     set<_TKey extends keyof _TInterfaces>(event: _TKey, ...listeners: pFlex.THandler<Parameters<_TInterfaces[_TKey]>, void>[]): void {
