@@ -18,7 +18,7 @@ export abstract class Shared_Pool<_TClass> extends Component {
     private static _$waiters = js.createMap(true);
     protected static _prefix: string = "";
 
-    protected static _key(_key: string | Helper_IdSelector) {
+    private static _key(_key: string | Helper_IdSelector) {
         return this._prefix + (_key instanceof Helper_IdSelector ? _key.sid : _key);
     }
 
