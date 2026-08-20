@@ -1,5 +1,5 @@
 
-import { Enum, js } from "cc";
+import { Enum, js, v3 } from "cc";
 import { EDITOR, EDITOR_NOT_IN_PREVIEW, DEV } from "cc/env";
 
 /**
@@ -20,6 +20,12 @@ export const ME_FUNC = function(_: any) { return _ }
 export const ARRAY_FUNC = function() { return [] };
 export const ENUM = Enum({})
 export const EMPTY = js.createMap(false);
+
+export function VEC3(x: number, y: number, z: number) {
+    const _key = `vec3_${x}_${y}_${z}`;
+    __pool__[_key] = __pool__[_key] || v3(x, y, z);
+    return __pool__[_key]
+}
 
 interface _ITimer {
     DAY(amount?: number): number;
