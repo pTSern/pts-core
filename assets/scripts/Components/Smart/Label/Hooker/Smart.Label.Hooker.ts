@@ -34,8 +34,19 @@ export abstract class Smart_Label_Hooker<_TType = any> extends Editor_PleaseOver
     protected abstract _actLookUpBinder(...args: any[]): void;
     protected _onPreLoad?(): void;
 
+    protected clear(): void {
+
+        this._onClear?.();
+    }
+
+    protected _onClear?(): void
     protected onDestroy(): void {
         pEngine.Json.event.remove(this.onChangerLookup, { func: this._actLookUpBinder, binder: this });
+        this.clear();
+    }
+
+    set string(text: string) {
+        this._label.string = this.prefix + text + this.suffix;
     }
 
 }

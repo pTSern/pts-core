@@ -31,6 +31,8 @@ class _Helper<_TType> {
 
 @ccclass('UI_Data_Displayer')
 export class UI_Data_Displayer<_TList extends pFlex.TKey> extends Component {
+    protected static _$helper: pFlex.TCtor<_Helper<any>> = _Helper;
+
     @property({ type: _Helper, visible: false })
     protected list: _Helper<_TList>[] = [];
     @property({ type: _Helper, visible: true })
@@ -57,4 +59,9 @@ export class UI_Data_Displayer<_TList extends pFlex.TKey> extends Component {
     resetInEditor(): void {
         this.onFocusInEditor();
     }
+}
+
+export namespace UI_Data_Displayer {
+    export const Helper = _Helper;
+    export type Helper<_TType> = _Helper<_TType>;
 }

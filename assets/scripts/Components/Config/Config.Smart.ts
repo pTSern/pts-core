@@ -1,44 +1,22 @@
-import { _decorator, CCClass, CCInteger, Component, Enum, js } from 'cc';
+import { _decorator, CCClass, Enum, js } from 'cc';
 import { Object_IIdHolder } from '../../interfaces/object/Object.IIdHolder';
 import { Helper_IdSelector } from '../../helper/Helper.IdSelector';
 import { Helper_Selector_Smart } from '../../helper/Selector/Helper.Selector.Smart';
-import { pClass } from '../../utils';
+import { pClass, pConst } from '../../utils';
 import { CC_EnumList } from '../../interfaces/cc/CC.IEnumable';
-import { Dictionary_Persistent } from '../../helper/Dictionary/Dictionary.Persistent';
-import { editor_property } from '../../utils/pClass';
+import { Shared_Pool } from '../Shared/Shared.Pool';
 
 const { ccclass, property } = _decorator;
 
-enum _EMode {
-    Set = 1,
-    Get = 2,
-}
-
-Enum(_EMode);
-
 @ccclass('Config_Smart')
-export class Config_Smart<_TObject> extends Component implements Object_IIdHolder<string> {
-
-    private static _$pool = new Dictionary_Persistent<string, Helper_Selector_Smart<any>>();
-    private static _$waiters = js.createMap(true);
+export class Config_Smart<_TObject> extends Shared_Pool<Helper_Selector_Smart<_TObject>> implements Object_IIdHolder<string> {
+    protected static _prefix: string = "Config_Smart_";
     static get<_TObject>(key: string) {
-        return Config_Smart._$pool.get(key) as Helper_Selector_Smart<_TObject>;
+        return this.take(key) as Helper_Selector_Smart<_TObject>;
     }
 
     static wait<_TObject>(key: string | Helper_IdSelector): Promise<Helper_Selector_Smart<_TObject>> {
-        if(key instanceof Helper_IdSelector) {
-            key = key.sid;
-        }
-
-        let _out = Config_Smart._$waiters[key];
-        if(!_out) {
-            _out = Config_Smart._$waiters[key] = new Promise<Helper_Selector_Smart<_TObject>>(_rs => {
-                const _ret = Config_Smart._$pool.get(key, _ => _rs(_));
-                _ret && _rs(_ret as Helper_Selector_Smart<_TObject>);
-            })
-        }
-
-        return _out;
+        return this.await(key) as Promise<Helper_Selector_Smart<_TObject>>;
     }
 
     protected _$lock: boolean = false;
@@ -47,18 +25,12 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
     protected _$creator: pFlex.TFunc<[number], _TObject> = null
     protected _$sid: string = null;
 
-    @property({ type: _EMode })
-    mode: _EMode = _EMode.Set;
-    @property({ type: CCInteger, min: 0, visible() { return this.mode === _EMode.Set } })
-    state: number = 5;
-
-    @property({ type: Helper_IdSelector })
-    hid: Helper_IdSelector = new Helper_IdSelector();
-
+    @property({ group: pConst.GROUPS.CORE, override: true, readonly: true })
+    isShared: boolean = true
     @property({})
     protected _filter: pClass.ETypes = 'cc.Node';
 
-    @property({ type: pClass.ETypes })
+    @property({ type: pClass.ETypes, group: pConst.GROUPS.CORE })
     get filter(): pClass.ETypes { return this._filter }
     set filter(x: pClass.ETypes) {
         if (this._filter === x) return;
@@ -68,7 +40,7 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
 
     @property({})
     protected _type: string = '';
-    @property({ type: Enum({}), visible() { return this._filter !== 'cc.Node' }})
+    @property({ type: Enum({}), visible() { return this._filter !== 'cc.Node' }, group: pConst.GROUPS.CORE })
     get type(): string { return this._type }
     set type(x: string) {
         if (this._type === x) return;
@@ -79,14 +51,10 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
 
     protected _key: string = 'name'
 
-    @property({ type: Helper_Selector_Smart })
+    @property({ type: Helper_Selector_Smart, group: pConst.GROUPS.CORE })
     target = new Helper_Selector_Smart<_TObject>();
 
     list() { return this.target.list; }
-
-    get id(): string {
-        return this.hid.sid;
-    }
 
     is(type: pFlex.TCtor<any, _TObject>) {
         const _name = js.getClassName(type);
@@ -95,25 +63,10 @@ export class Config_Smart<_TObject> extends Component implements Object_IIdHolde
         return (_name === _current)
     }
 
-    protected __preload(): void {
-        switch(this.mode) {
-            case _EMode.Set: {
-                Config_Smart._$pool.set(this.id, this.target, { state: this.state, onFail: _ => this.target = _, onSuccess: _ => {
-                    _.key(this._key);
-                    _.init()
-                } });
-                break;
-            }
-            case _EMode.Get: {
-                this.target = Config_Smart._$pool.get(this.id, _ => this.target = _);
-                break;
-            }
-        }
-
-        this._onPreLoad?.();
+    protected _onPoolSetSuccess?: (args_0: Helper_Selector_Smart<_TObject>) => void = _ => {
+        _.key(this._key);
+        _.init();
     }
-
-    protected _onPreLoad?(): void
 
     resetInEditor(): void {
         this.target.set(this._filter === 'cc.Node' ? this._filter : this.type);

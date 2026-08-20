@@ -1,8 +1,9 @@
-import { _decorator, CCClass, Component, js } from "cc";
+import { _decorator, CCClass, js } from "cc";
 import { pClass, pConst, pDriver } from "db://pts-core/scripts/utils";
 import { CC_IEnumList } from "../../interfaces/cc/CC.IEnumable";
 import { BUILD } from "cc/env";
 import { Event_Flexer } from "./Event.Flexer";
+import { Shared_Pool } from "../Shared/Shared.Pool";
 
 const { property, ccclass } = _decorator
 
@@ -27,12 +28,9 @@ class _Helper<_TKey extends pFlex.TKey> {
 }
 
 @ccclass("Event_Driver")
-export class Event_Driver<_TInterfaces extends Record<string, any>> extends Component implements pDriver.IDriver<_TInterfaces> {
+export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shared_Pool<pDriver.Handler<any>> implements pDriver.IDriver<_TInterfaces> {
     protected static _$bounces: readonly pFlex.TKey[] | pFlex.TKey[]
     protected static _$class: pFlex.TCtor<_Helper<keyof _$TInterfaces>> = _Helper
-
-    @property({ group: pConst.GROUPS.CORE })
-    isShared: boolean = true;
 
     @property({ type: _Helper })
     protected _helpers: _Helper<keyof _TInterfaces>[] = []
@@ -40,7 +38,6 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Comp
     @property({ type: _Helper, group: pConst.GROUPS.EVENT })
     get helpers() { return this._helpers }
     set helpers(value: _Helper<keyof _TInterfaces>[]) {
-        console.log(`Event_Driver: Set helpers`, value);
         const _ctor = this.constructor['_$class'] as pFlex.TCtor<_Helper<keyof _TInterfaces>>;
 
         if(pClass.isInheritedFrom(Event_Driver._$class, _ctor)) {
@@ -67,7 +64,7 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Comp
     @property({ group: pConst.GROUPS.OPTION })
     isReturnJsonResponse: boolean = false;
 
-    protected _event: pDriver.Handler<any> = null
+    target: pDriver.Handler<any> = null
     private _$key: (_key: keyof _TInterfaces) => pFlex.TKey = pConst.THROWER
     private _$map: Record<keyof _TInterfaces, _Helper<keyof _TInterfaces>> = js.createMap(true);
 
@@ -85,22 +82,22 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Comp
     /**
      * NOTE: MUST CALL `super` on overriding
      */
-    protected __preload(): void {
+    protected _onPreLoad(): void {
         this.helpers.forEach(_ => this._$map[_.key] = _);
         BUILD && delete this.helpers;
-        [this._event, this._$key] = this.isShared ? [_$, _ => _] : [pDriver.Handler.create(), _ => `${this.zid}_${String(_)}`]
+        [this.target, this._$key] = this.isShared ? [_$, _ => _] : [pDriver.Handler.create(), _ => `${this.uuid}_${String(_)}`]
     }
 
     set<_TKey extends keyof _TInterfaces>(event: _TKey, ...listeners: pFlex.THandler<Parameters<_TInterfaces[_TKey]>, void>[]): void {
-        return this._event.set(this._$key(event), ...listeners)
+        return this.target.set(this._$key(event), ...listeners)
     }
 
     wait<_TKey extends keyof _TInterfaces>(key: _TKey): Promise<void> {
-        return this._event.wait(this._$key(key));
+        return this.target.wait(this._$key(key));
     }
 
     public emit<_TKey extends keyof _TInterfaces>(key: _TKey, ...args: Parameters<_TInterfaces[_TKey]>): any[] {
-        const _d = () => this._event.emit(this._$key(key), ...args);
+        const _d = () => this.target.emit(this._$key(key), ...args);
         const _j = () => this._$map[key]?.emit(...args) || [];
 
         const [_first, _second] = this.isDriverFist ? [_d, _j] : [_j, _d];
@@ -111,19 +108,19 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Comp
     }
 
     on<_TKey extends keyof _TInterfaces>(key: _TKey, ...funcs: pFlex.THandler<Parameters<_TInterfaces[_TKey]>, void>[]): void {
-        return this._event.on(this._$key(key), ...funcs);
+        return this.target.on(this._$key(key), ...funcs);
     }
 
     once<_TKey extends keyof _TInterfaces>(key: _TKey, ...funcs: pFlex.THandler<Parameters<_TInterfaces[_TKey]>, void>[]): void {
-        return this._event.once(this._$key(key), ...funcs);
+        return this.target.once(this._$key(key), ...funcs);
     }
 
     off<_TKey extends keyof _TInterfaces>(key: _TKey, ...funcs: pFlex.THandler<Parameters<_TInterfaces[_TKey]>, void>[]): void {
-        return this._event.off(this._$key(key), ...funcs);
+        return this.target.off(this._$key(key), ...funcs);
     }
 
     clear(key: keyof _TInterfaces): void {
-        return this._event.clear(this._$key(key))
+        return this.target.clear(this._$key(key))
     }
 
 }
