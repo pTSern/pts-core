@@ -8,15 +8,24 @@ import { Shared_Pool } from '../Shared/Shared.Pool';
 
 const { ccclass, property } = _decorator;
 
+type _TConfigCtor<T> = new (...args: any[]) => Config_Smart<T>;
+
 @ccclass('Config_Smart')
 export class Config_Smart<_TObject> extends Shared_Pool<Helper_Selector_Smart<_TObject>> implements Object_IIdHolder<string> {
     protected static _prefix: string = "Config_Smart_";
-    static get<_TObject>(key: string) {
-        return this.take(key) as Helper_Selector_Smart<_TObject>;
+
+    static get<T>(this: new (...args: any[]) => Config_Smart<T>, key: string | Helper_IdSelector<any>): Helper_Selector_Smart<T> | undefined;
+    static get<T>(key: Helper_IdSelector<T>): Helper_Selector_Smart<T> | undefined;
+    static get<T = any>(key: string | Helper_IdSelector<any>): Helper_Selector_Smart<T> | undefined;
+    static get(this: any, key: any): any {
+        return this.take(key);
     }
 
-    static wait<_TObject>(key: string | Helper_IdSelector): Promise<Helper_Selector_Smart<_TObject>> {
-        return this.await(key) as Promise<Helper_Selector_Smart<_TObject>>;
+    static wait<T>(this: new (...args: any[]) => Config_Smart<T>, key: string | Helper_IdSelector<any>): Promise<Helper_Selector_Smart<T>>;
+    static wait<T>(key: Helper_IdSelector<T>): Promise<Helper_Selector_Smart<T>>;
+    static wait<T = any>(key: string | Helper_IdSelector<any>): Promise<Helper_Selector_Smart<T>>;
+    static wait(this: any, key: any): Promise<any> {
+        return this.await(key);
     }
 
     protected _$lock: boolean = false;

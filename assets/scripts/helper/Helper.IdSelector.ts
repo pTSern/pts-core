@@ -6,7 +6,9 @@ import { pConst } from '../utils';
 const { ccclass, property } = _decorator;
 
 @ccclass('Helper_IdSelector')
-export class Helper_IdSelector extends Editor_Smart_SelfFocus {
+export class Helper_IdSelector<_T = any> extends Editor_Smart_SelfFocus {
+    declare readonly _$type?: _T;
+
     @property({ visible() { return pConst.EDITOR_ONLY_IN_PREVIEW }, readonly: true, group: pConst.GROUPS.DEBUGGER })
     protected _sid: string = js.IDGenerator.global.getNewId();
 

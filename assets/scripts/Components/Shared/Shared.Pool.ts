@@ -12,30 +12,39 @@ enum _EMode {
 
 pLazy.enums(_EMode);
 
+type _TCtor<T> = new (...args: any[]) => Shared_Pool<T>;
+
 @ccclass('Shared_Pool')
 export abstract class Shared_Pool<_TClass> extends Component {
     private static _$pool = new Dictionary_Persistent<string, any>()
     private static _$waiters = js.createMap(true);
     protected static _prefix: string = "";
 
-    private static _key(_key: string | Helper_IdSelector) {
-        return this._prefix + (_key instanceof Helper_IdSelector ? _key.sid : _key);
+    private static _key(this: any, _key: string | Helper_IdSelector<any>) {
+        const prefix = this?._prefix ?? Shared_Pool._prefix ?? "";
+        return prefix + (_key instanceof Helper_IdSelector ? _key.sid : _key);
     }
 
-    static take<_TObject>(key: string | Helper_IdSelector) {
-        key = this._key(key);
-        return this._$pool.get(key) as _TObject;
+    static take<T>(this: new (...args: any[]) => Shared_Pool<T>, key: string | Helper_IdSelector<any>): T | undefined;
+    static take<T>(key: Helper_IdSelector<T>): T | undefined;
+    static take<T = any>(key: string | Helper_IdSelector<any>): T | undefined;
+    static take(this: any, key: string | Helper_IdSelector<any>): any {
+        const fullKey = (this?._key ? this._key(key) : Shared_Pool._key(key));
+        return Shared_Pool._$pool.get(fullKey);
     }
 
-    static await<_TObject>(key: string | Helper_IdSelector): Promise<_TObject> {
-        key = this._key(key);
+    static await<T>(this: new (...args: any[]) => Shared_Pool<T>, key: string | Helper_IdSelector<any>): Promise<T>;
+    static await<T>(key: Helper_IdSelector<T>): Promise<T>;
+    static await<T = any>(key: string | Helper_IdSelector<any>): Promise<T>;
+    static await(this: any, key: string | Helper_IdSelector<any>): Promise<any> {
+        const fullKey = (this?._key ? this._key(key) : Shared_Pool._key(key));
 
-        let _out = Shared_Pool._$waiters[key];
+        let _out = Shared_Pool._$waiters[fullKey];
         if(!_out) {
-            _out = Shared_Pool._$waiters[key] = new Promise<_TObject>(_rs => {
-                const _ret = Shared_Pool._$pool.get(key, _ => _rs(_));
-                _ret && _rs(_ret as _TObject);
-            })
+            _out = Shared_Pool._$waiters[fullKey] = new Promise<any>(_rs => {
+                const _ret = Shared_Pool._$pool.get(fullKey, _ => _rs(_));
+                _ret && _rs(_ret);
+            });
         }
 
         return _out;
