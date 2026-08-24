@@ -364,7 +364,7 @@ interface _IAttr {
 
 interface _INodeUtils {
     getCCProps: (target: pFlex.TFunc | object, ...types: pFlex.TCtor[]) => string[];
-    create: <T extends pFlex.TCtor<any, any>[]>(opt: _INodeUtilsCreator, configs?: { [K in keyof T]: { type: T[K], opt?: Partial<any>, multiple?: boolean, modifier?: (i: any) => void } }) => { node: Node; comps: any[] };
+    create: <T extends pFlex.TCtorFlex<any, any>[]>(opt: _INodeUtilsCreator, configs?: { [K in keyof T]: { type: T[K], opt?: { [ _K in keyof InstanceType<T[K]> as InstanceType<T[K]>[_K] extends Function ? never : _K]?: InstanceType<T[K]>[_K] }, multiple?: boolean, modifier?: (i: InstanceType<T[K]>, parent: Node) => void } }) => { node: Node; comps: any[] };
     setPosition: <T extends IVec3Like>(target: TFlexCCNode, pos: TFlexPosition<T>, dif?: T) => void;
     getNodeInfo: (target: TFlexCCNode) => any;
     search: <T extends Component>(cls: pFlex.TCtor<any, T>, root?: Node) => T | null;
@@ -639,7 +639,7 @@ NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.T
     return _props;
 }
 
-NodeUtils.create = function<T extends pFlex.TCtor<any, any>[]>(opt: _INodeUtilsCreator, configs?: { [K in keyof T]: { type: T[K], opt?: Partial<any>, multiple?: boolean, modifier?: (i: any) => void } }) {
+NodeUtils.create = function(opt, configs?) {
     const node = opt.fab ? Array.isArray(opt.fab) ? instantiate(pMath.rand(opt.fab)) : instantiate(opt.fab) : new Node();
     if (opt.name) node.name = typeof opt.name === 'function' ? opt.name(node) : opt.name;
     if (opt.isDisconnectPrefabLink && EDITOR) (node as any)._prefab = null;
@@ -654,11 +654,12 @@ NodeUtils.create = function<T extends pFlex.TCtor<any, any>[]>(opt: _INodeUtilsC
     }
 
     const comps = configs ? configs.map(c => {
-        const i = c.multiple ? node.addComponent(c.type) : (node.getComponent(c.type) || node.addComponent(c.type));
+        const i = c.multiple ? node.addComponent(c.type as any) : (node.getComponent(c.type) || node.addComponent(c.type as any));
         if (c.opt) pObject.assign(i, c.opt);
-        if (c.modifier) cc.misc.callInNextTick( () => c.modifier(i));
+        if (c.modifier) c.modifier(i, node)
         return i;
     }) : [];
+
     return { node, comps: comps as any };
 }
 
