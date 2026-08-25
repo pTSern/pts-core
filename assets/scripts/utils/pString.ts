@@ -3,6 +3,7 @@ import * as pArray from "./pArray";
 import { randomRangeInt, js } from 'cc'
 
 const _$match = /^([a-zA-Z])(\d+)?$/;
+const _$chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 /**
  * pString: String manipulation and formatting.
@@ -34,7 +35,19 @@ export function randomColorHex(): string {
     return `#${rand.padStart(6, '0')}`;
 }
 
-export function uuid(): string {
+export function uuid(packs: number[] = null): string {
+    if(!!packs) {
+        return packs.map( _total => {
+            const _chars = `${randomRangeInt(1000, 9999)}${_$chars}${Date.now()}`;
+            console.log(_chars)
+            let _str = "";
+            for(let i = 0; i < _total; i++) {
+                _str += _chars.charAt(Math.floor(Math.random() * _chars.length));
+            }
+            return _str;
+        }).join('-')
+
+    }
     return `${randomRangeInt(1000, 9999)}_${Date.now()}_${js.IDGenerator.global.getNewId()}`;
 }
 
