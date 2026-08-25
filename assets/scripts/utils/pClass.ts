@@ -38,6 +38,16 @@ export const EPrimitive = CC_IEnumable.generator(_$primitives);
 export type EPrimitive = (typeof _$primitives[number])
 export const CCEPrimitive = CC_IEnumList.generator(_$primitives);
 
+const _$list = new WeakMap();
+export function actExtractProp(_class: pFlex.TCtor) {
+    const instance = _$list.get(_class) || new _class();
+    _$list.set(_class, instance);
+  
+    return Object.keys(instance).filter(
+        (key) => typeof instance[key] !== "function"
+    );
+}
+
 export function getClassName(filter: ETypes, type: string) {
     if(filter == 'cc.Node') return filter
     return type;

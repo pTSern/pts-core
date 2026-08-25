@@ -134,3 +134,18 @@ export function actChainBinder(chain: pFlex.TArray<string>, global: any = window
 
     return current;
 }
+
+export function hook<_TObject extends object>(obj: _TObject, prop: pFlex.TKeyOf<_TObject>) {
+    return new Promise(_rs => {
+        if(obj[prop] !== undefined) {
+            return _rs(obj[prop]);
+        }
+
+        let _inter = obj[prop];
+        Object.defineProperty(obj, prop, {
+            get() { return _inter },
+            set(val) { _inter = val; _rs(val)},
+            configurable: true
+        })
+    })
+}
