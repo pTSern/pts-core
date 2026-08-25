@@ -340,7 +340,7 @@ Json.event.invoke = function(asset, ...args: any[]) {
     const _assets = pArray.flatter(asset);
     for(const _ret of _assets) {
         const d = _get(_ret);
-        pGlobal.log('DEV', '[Json.event.invoke] >>', _ret.name, ' with args ', ...args);
+        pGlobal.log('DEV', '[Json.event.invoke] >>', _ret.name, ' with args ', ...args, "\nList: ", _assets);
         if (d) return pClass.emit(d.listeners, ...args);
     }
 }
