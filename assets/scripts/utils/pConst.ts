@@ -98,6 +98,7 @@ export const GROUPS = {
     OPTION:     { name: "Option", id: "9", displayOrder: 2000 },
     CONFIG:     { name: "Config", id: "9" },
     DETAIL:     { name: "Detail", id: "9" },
+    LISTENER:   { name: "Listener", id: "9" },
 
     get: (name: string, id: string = "9", displayOrder: number = 1) => {
         const _sid = `${name}_${id}`;

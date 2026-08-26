@@ -67,7 +67,17 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shar
 
     target: pDriver.Handler<any> = null
     private _$key: (_key: keyof _TInterfaces) => pFlex.TKey = pConst.THROWER
-    private _$map: Record<keyof _TInterfaces, _Helper<keyof _TInterfaces>> = js.createMap(true);
+    private _$map: Record<pFlex.TKey, _Helper<any>> = js.createMap(true);
+
+    private _$container = {
+        get(container: Record<any, _Helper<any>>, key: pFlex.TKey, ...args: any[]) {
+            args;
+            return container[String(key)]
+        },
+        key(helper: _Helper<any>): string {
+            return helper.key;
+        }
+    }
 
     onFocusInEditor() { this.__focus() }
     resetInEditor(): void { this.__focus() }
@@ -80,11 +90,17 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shar
         this.helpers.forEach(_ => _.focus(_enums));
     }
 
+    protected _transfomer?(): typeof this._$container
+
     /**
      * NOTE: MUST CALL `super` on overriding
      */
     protected __preload(): void {
-        this.helpers.forEach(_ => this._$map[_.key] = _);
+        if(this._transfomer) {
+            this._$container = this._transfomer();
+        }
+
+        this.helpers.forEach(_ => this._$map[this._$container.key(_)] = _);
         BUILD && delete this.helpers;
         [this.target, this._$key] = this.isShared ? [_$, _ => `${this.uuid}_${String(_)}`] : [pDriver.Handler.create(), _ => _]
         super.__preload();
@@ -100,7 +116,10 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shar
 
     public emit<_TKey extends keyof _TInterfaces>(key: _TKey, ...args: Parameters<_TInterfaces[_TKey]>): any[] {
         const _d = () => this.target.emit(this._$key(key), ...args);
-        const _j = () => this._$map[key]?.emit(...args) || [];
+        const _j = () => {
+            const _helper = this._$container.get(this._$map as any, key, ...args);
+            return _helper?.emit(...args) || [];
+        } 
 
         const [_first, _second] = this.isDriverFist ? [_d, _j] : [_j, _d];
         const _r1 = _first(), _r2 = _second();

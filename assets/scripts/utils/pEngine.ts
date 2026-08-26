@@ -386,6 +386,7 @@ interface _INodeUtilsCreator {
     rotation?: IVec3Like;
     isDisconnectPrefabLink?: boolean;
     isNotKeepWorldTransform?: boolean
+    pool?: cc.NodePool
 }
 
 const __$lookup_ = new Map<string, Node | Component>();
@@ -640,11 +641,21 @@ NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.T
 }
 
 NodeUtils.create = function(opt, configs?) {
-    const node = opt.fab ? Array.isArray(opt.fab) ? instantiate(pMath.rand(opt.fab)) : instantiate(opt.fab) : new Node();
+    let node = null
+    if(opt.pool) {
+        node = opt.pool.get();
+    }
+
+    if(!node) {
+        node = opt.fab ? Array.isArray(opt.fab) ? instantiate(pMath.rand(opt.fab)) : instantiate(opt.fab) : new Node();
+    }
+
     if (opt.name) node.name = typeof opt.name === 'function' ? opt.name(node) : opt.name;
     if (opt.isDisconnectPrefabLink && EDITOR) (node as any)._prefab = null;
+
     node.layer = opt.layer ?? Layers.Enum.UI_2D;
     node.active = opt.active ?? true;
+
     if (opt.scale) node.setScale(opt.scale.x, opt.scale.y, opt.scale.z);
     if (opt.rotation) node.setRotationFromEuler(opt.rotation.x, opt.rotation.y, opt.rotation.z);
 

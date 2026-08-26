@@ -57,14 +57,18 @@ export function download(fileName: string, content: string) {
 // Logging
 export interface _ILogOption {
     title: string;
-    color?: string;
+    color?: string | cc.Color
     weight?: "bold" | "light" | "italic";
 }
 
 export function group(level: _TLogLevel, opt: string | _ILogOption, ...args: any[][]) {
     if(level === 'DEV' && !CC.DEV) return;
 
-    const { title, color = "#3498db", weight = "bold" } = typeof opt === 'string' ? { title: opt } : opt;
+    let { title, color = "#3498db", weight = "bold" } = typeof opt === 'string' ? { title: opt } : opt;
+    if(color instanceof cc.Color) {
+        color = `#${color.toHEX('#rrggbbaa')}`;
+    }
+
     console.group(`%c ${title}`, `color: ${color}; font-weight: ${weight}`);
     args.forEach(_args => console.log(..._args));
     console.groupEnd();
