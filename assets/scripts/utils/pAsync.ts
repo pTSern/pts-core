@@ -164,7 +164,7 @@ export class Task<_T = void> {
     recycle() {
         if(this._state === 'pending') {
             //console.warn("[Async_Task] Is already pending, no need to recycle. Please wait for it to complete or `.abort` it if you want to recycle immediately.")
-            return;
+            return this;
         }
 
         this._count ++;
@@ -177,6 +177,7 @@ export class Task<_T = void> {
         }
 
         _pool.push(this);
+        return this;
     }
 
     abort(cleanup: boolean = true) {
