@@ -1,4 +1,4 @@
-import { _decorator, Component, Camera, Vec3, UITransform, director, sys, game } from 'cc';
+import { _decorator, Component, Camera, Vec3, UITransform, Color, director, sys, game } from 'cc';
 const { ccclass, property, requireComponent } = _decorator;
 
 const _worldPos = new Vec3();
@@ -50,6 +50,14 @@ export class Dom_SyncNode extends Component {
      */
     @property({})
     zIndex: number = 100;
+
+    /** When `true`, fills the DOM element with `debugColor` so you can visually verify the sync. */
+    @property({})
+    debug: boolean = false;
+
+    /** Fill color used when `debug` is enabled. */
+    @property({ type: Color, visible() { return this.debug } })
+    protected _dcolor: Color = new Color(255, 0, 0, 128);
 
     // ── Runtime State ──────────────────────────────────────────────────
 
@@ -124,6 +132,8 @@ export class Dom_SyncNode extends Component {
         const parent = document.getElementById(this.container) || document.body;
         parent.appendChild(el);
         this._domElement = el;
+
+        this._applyDebugStyle();
     }
 
     /**
@@ -166,5 +176,19 @@ export class Dom_SyncNode extends Component {
         el.style.top    = `${domTop}px`;
         el.style.width  = `${domWidth}px`;
         el.style.height = `${domHeight}px`;
+    }
+
+    private _applyDebugStyle() {
+        const el = this._domElement;
+        if (!el) return;
+
+        if (this.debug) {
+            const c = this._dcolor;
+            el.style.backgroundColor = `rgba(${c.r}, ${c.g}, ${c.b}, ${(c.a / 255).toFixed(2)})`;
+            el.style.border = `2px solid rgba(${c.r}, ${c.g}, ${c.b}, 1)`;
+        } else {
+            el.style.backgroundColor = '';
+            el.style.border = '';
+        }
     }
 }
