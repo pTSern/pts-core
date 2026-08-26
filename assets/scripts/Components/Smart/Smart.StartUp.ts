@@ -154,7 +154,10 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
     protected onDestroy(): void {
         this.stop();
         this._onDestroy?.()
+        this._unbind();
+    }
 
+    protected _unbind() {
         pEngine.Json.event.remove(this.stoppers, { func: this.stop, binder: this })
         pEngine.Json.event.remove(this.starters, { func: this.execute, binder: this })
         pEngine.Json.event.remove(this.pausers, { func: this.pause, binder: this })
@@ -164,6 +167,7 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
 
     actSafeDestroy() {
         this.stop();
+        this._unbind();
         this._onPreSafeDestroy?.();
 
         misc.callInNextTick( () => this.destroy());
