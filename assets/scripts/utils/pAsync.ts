@@ -1,10 +1,11 @@
 
+import * as pClass from "./pClass";
 import * as pArray from "./pArray";
 import { editor_ccclass, editor_property } from "./pClass";
 import { VOID_FUNC, RESOLVER } from "./pConst";
 import { uuid } from "./pString";
 
-import { _decorator, js } from 'cc'
+import { _decorator, CCString, js } from 'cc'
 
 /**
  * pAsync: Asynchronous utilities.
@@ -82,8 +83,10 @@ export function isRunning(id: string): boolean {
  * Dynamic Promise Resolver.
  * Resolves batches of promises sequentially.
  */
+@editor_ccclass('pAsync_DynamicResolver')
 export class DynamicResolver {
     private _batches: Promise<any>[][] = [];
+    @editor_property()
     private _isResolving = false;
 
     public add(promise: pFlex.TArray<Promise<any>>, ...rest: Promise<any>[]) {
@@ -93,23 +96,97 @@ export class DynamicResolver {
     public async resolve() {
         if (this._isResolving) return;
         this._isResolving = true;
-        
+
         while (this._batches.length > 0) {
             const batch = this._batches.shift();
             if (batch) await Promise.all(batch);
         }
-        
+
+        this._isResolving = false;
+    }
+
+    purge() {
+        this._batches = [];
         this._isResolving = false;
     }
 }
 
+type _TEntry<_T extends pFlex.TKey, _V = any> = {
+    key: _T,
+    listener: _V
+}
+
+//get<_TKeys extends _$TKey[]>(...keys: _TKeys): { [K in _TKeys[number]]: _$IGameData[K] }
+@editor_ccclass('pAsync_DynamicBarrier')
+export class DynamicBarrier<_TKey extends pFlex.TKey> {
+    protected _promises: Promise<any>[] = [];
+    protected _all: Promise<any> = null;
+    protected _obj: Record<_TKey, pFlex.TFunc> = {} as any;
+
+    @editor_property()
+    get sealed() { return !!this._all }
+    @editor_property()
+    get total() { return this._promises.length }
+
+    get(key: _TKey): pFlex.TFunc | null {
+        return this._obj[key] || null;
+    }
+
+    purge(...items: _TEntry<_TKey, pFlex.IBinder>[]) {
+        this._promises = [];
+        this._all = null;
+
+        for(const _item of items) {
+            let _resolver: Function;
+            const _prm = new Promise<any>(rs => _resolver = rs);
+            this._promises.push(_prm);
+
+            let _called = false;
+            const _listener = (...args: any[]) => {
+                try {
+                    console.log(`[DynamicBarrier] Resolving listener for key: `, _item);
+                    return pClass.emit(_item.listener, ...args);
+                } finally {
+                    if (!_called) {
+                        _called = true;
+                        _resolver();
+                    }
+                }
+            }
+            this._obj[_item.key] = _listener;
+        }
+    }
+
+    resolve(key: _TKey, ...args: any[]) {
+        const _listener = this._obj[key];
+        console.log(`[DynamicBarrier] Resolving key: `, key, ' with listener: ', _listener, this._obj);
+        if (_listener) {
+            return _listener(...args);
+        } else {
+            console.warn(`[DynamicBarrier] No listener found for key: `, key);
+        }
+        return void 0
+    }
+
+    async wait(isPurgeOnComplete: boolean = true) {
+        if(this._all) return this._all;
+
+        this._all = Promise.all(this._promises);
+        const _out = await this._all;
+
+        if(isPurgeOnComplete) {
+            this._promises = [];
+            this._all = null;
+        }
+        console.log(`[DynamicBarrier] All promises resolved. Count: ${_out.length}`);
+
+        return _out
+    }
+
+
+}
+
 type _TState = "pending" | 'resolved' | 'rejected' | 'aborted'
-
-type _TExecutor<_T> = pFlex.TFunc<[
-    resolver: pFlex.TFunc<[_T], void>,
-    rejecter: pFlex.TTFunc.Fail
-], void>
-
 
 const _pool: Task<any>[] = []
 
@@ -136,6 +213,15 @@ export class Task<_T = void> {
     @editor_property()
     protected _count: number = 0
 
+    @editor_property(CCString)
+    protected _costs = []
+
+    @editor_property()
+    protected _start: number = 0
+
+    @editor_property()
+    protected _end: number = 0
+
     protected _result: _T = null
 
     wait() {
@@ -159,6 +245,7 @@ export class Task<_T = void> {
                 break;
             }
         }
+        return this;
     }
 
     recycle() {
@@ -169,6 +256,7 @@ export class Task<_T = void> {
 
         this._count ++;
         this._state = 'pending';
+        this._start = Date.now();
         if(!this._promise) {
             this._promise = new Promise<_T>( (_rs, _rj) => {
                 this._resolver = _rs;
@@ -182,14 +270,17 @@ export class Task<_T = void> {
 
     abort(cleanup: boolean = true) {
         this._resolve('aborted', null, cleanup)
+        return this;
     }
 
     resolve(params: _T, cleanup: boolean = true) {
         this._resolve('resolved', params, cleanup)
+        return this;
     }
 
     reject(error: Error, cleanup: boolean = true) {
         this._resolve('rejected', error, cleanup)
+        return this;
     }
 
     protected _resolve(state: _TState, params: any, cleanup: boolean) {
@@ -204,10 +295,12 @@ export class Task<_T = void> {
         const _rj = this._rejecter;
         this._rejecter = this._resolver = VOID_FUNC;
 
+        this._costs.push(`${this._count}: ${state} in ${(Date.now() - this._start)/1000}s`)
         state === 'rejected' ? (_rj(params), this._result = null) : _rs(params);
 
         if(state === 'resolved') {
             this._result = params;
+
             _cbs.forEach(_cb => {
                 try {
                     _cb?.(params) 
@@ -466,6 +559,4 @@ export class Mutex {
         }
     }
 }
-
-
 

@@ -18,7 +18,7 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
     @property({ type: Enums_EStartUp, group: pConst.GROUPS.CORE })
     mode: Enums_EStartUp = Enums_EStartUp.None;
 
-    @property({ type: JsonAsset, group: pConst.GROUPS.get('Hooker') })
+    @property({ type: JsonAsset, group: pConst.GROUPS.LISTENER })
     starters: JsonAsset[] = [];
 
     @property({ min: 0, type: CCInteger, group: pConst.GROUPS.CORE })
@@ -27,16 +27,16 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
     @property({ group: pConst.GROUPS.CORE })
     isStackExecution: boolean = false
 
-    @property({ type: JsonAsset, group: pConst.GROUPS.get('Hooker') })
+    @property({ type: JsonAsset, group: pConst.GROUPS.LISTENER })
     stoppers: JsonAsset[] = []
 
-    @property({ type: JsonAsset, group: pConst.GROUPS.get('Hooker') })
+    @property({ type: JsonAsset, group: pConst.GROUPS.LISTENER })
     destroyers: JsonAsset[] = []
 
-    @property({ type: JsonAsset, group: pConst.GROUPS.get('Hooker') })
+    @property({ type: JsonAsset, group: pConst.GROUPS.LISTENER })
     pausers: JsonAsset[] = []
 
-    @property({ type: JsonAsset, group: pConst.GROUPS.get('Hooker') })
+    @property({ type: JsonAsset, group: pConst.GROUPS.LISTENER })
     resumers: JsonAsset[] = []
 
     @property({ type: Event_Flexer, group: pConst.GROUPS.EVENT })
