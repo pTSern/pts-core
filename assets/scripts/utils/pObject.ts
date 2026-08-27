@@ -25,6 +25,43 @@ export function actRevertMap<TValue, TKey extends object>(weaker: Map<TKey, TVal
     return result;
 }
 
+type _TType = "string" | "number" | "bigint" | "boolean" | "symbol" | "undefined" | "object" | "function"
+type _TQuery<_T> = _TType | pFlex.TCtor<any, _T>
+
+function _actQueryByCtor<_T>(target: unknown, ctor: pFlex.TCtor<any, _T>, out: _T[] = []): _T[] {
+    if (!target || typeof target !== 'object') return out;
+
+    if (target instanceof ctor) {
+        out.push(target);
+    } else if (Array.isArray(target)) {
+        for (let i = 0, len = target.length; i < len; i++) {
+            _actQueryByCtor(target[i], ctor, out);
+        }
+    }
+
+    return out;
+}
+
+function _actQueryByType(target: unknown, type: _TType, out: any[] = []): any[] {
+    if (!target) return out;
+
+    if(Array.isArray(target)) {
+        for (let i = 0, len = target.length; i < len; i++) {
+            _actQueryByType(target[i], type, out);
+        }
+    } else if (typeof target === type) {
+        out.push(target);
+    }
+
+    return out;
+}
+
+export function query<_T = any>(target: object, type: _TQuery<_T>): _T[] {
+    if (typeof type === 'function') return _actQueryByCtor(target, type);
+    else if (typeof type === 'string') return _actQueryByType(target, type);
+    return []
+}
+
 /**
  * Deep clone an object.
  * Logic: Uses structuredClone if available (modern browsers), otherwise falls back to JSON.
