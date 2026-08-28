@@ -51,6 +51,10 @@ type _$IManager = {
     once<_TKey extends 'set' | 'get' | 'add'>(event: _TKey, ...funcs: any[]): void
     off<_TKey extends 'set' | 'get' | 'add'>(event: _TKey, ...funcs: any[]): void
     clear(event: 'set' | 'get' | 'add'): void
+
+    json(sync: false): pFlex.TJsonString
+    json(sync: true): Promise<pFlex.TJsonString>
+    json(sync?: boolean): pFlex.TJsonString | Promise<pFlex.TJsonString>
 }
 
 const _$ = {
@@ -215,6 +219,10 @@ Data_Manager.wait = function() {
 };
 
 Data_Manager.status = function() { return _$.status; };
+
+Data_Manager.json = function(sync: boolean): any {
+    return sync ? Data_Manager.wait().then(() => JSON.stringify(_$mobj())) : JSON.stringify(_$mobj()); 
+};
 
 
 if(DEV) {
