@@ -161,7 +161,7 @@ export class DynamicBarrier<_TKey extends pFlex.TKey> {
         const _listener = this._obj[key];
         console.log(`[DynamicBarrier] Resolving key: `, key, ' with listener: ', _listener, this._obj);
         if (_listener) {
-            return _listener(...args);
+            return _listener.call(this, ...args);
         } else {
             console.warn(`[DynamicBarrier] No listener found for key: `, key);
         }
