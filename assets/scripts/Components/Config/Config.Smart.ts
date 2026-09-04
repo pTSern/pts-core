@@ -8,8 +8,6 @@ import { Shared_Pool } from '../Shared/Shared.Pool';
 
 const { ccclass, property } = _decorator;
 
-type _TConfigCtor<T> = new (...args: any[]) => Config_Smart<T>;
-
 @ccclass('Config_Smart')
 export class Config_Smart<_TObject> extends Shared_Pool<Helper_Selector_Smart<_TObject>> implements Object_IIdHolder<string> {
     protected static _prefix: string = "Config_Smart_";
