@@ -17,6 +17,9 @@
                 "path": "./assets",
                 "readonly": true
             }
+        },
+        "scene": {
+            "script": "./src/_cc.js"
         }
     }
 }

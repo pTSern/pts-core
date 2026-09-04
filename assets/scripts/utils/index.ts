@@ -27,6 +27,8 @@ export {
     pLazy
 };
 
+export { pTSAsset } from "../pTSAsset";
+
 if(DEBUG) {
     window['pTS'] = window['pTS'] || js.createMap(true)
     window['pTS']['utils'] = {
