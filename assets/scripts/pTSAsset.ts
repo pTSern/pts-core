@@ -1,4 +1,5 @@
 import { __private, _decorator, Asset } from "cc";
+import { pDriver } from "./utils";
 
 const { ccclass } = _decorator;
 
@@ -14,20 +15,26 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = Record<string, 
 
         this._onLoad?.();
     }
+    protected _driver = pDriver.Handler.create<_TInterfaces>();
 
     //@ts-ignore
-    on<_TKey extends keyof _TInterfaces>(key: _TKey, callback: _TInterfaces[_TKey], binder: any): void {
-        super.on(key as any, callback, binder);
+    override on<_TKey extends keyof _TInterfaces>(key: _TKey, func: _TInterfaces[_TKey], binder: any): void {
+        this._driver.on(key, { func, binder });
     }
 
     //@ts-ignore
-    once<_TKey extends keyof _TInterfaces>(key: _TKey, callback: _TInterfaces[_TKey], binder: any): void {
-        super.once(key as any, callback, binder);
+    override once<_TKey extends keyof _TInterfaces>(key: _TKey, func: _TInterfaces[_TKey], binder: any): void {
+        this._driver.once(key, { func, binder });
     }
 
     //@ts-ignore
-    off<_TKey extends keyof _TInterfaces>(key: _TKey, callback: _TInterfaces[_TKey], binder: any): void {
-        super.off(key as any, callback, binder);
+    override off<_TKey extends keyof _TInterfaces>(key: _TKey, callback: _TInterfaces[_TKey], binder: any): void {
+        this._driver.off(key as any, callback, binder);
+    }
+
+    //@ts-ignore
+    override emit<_TKey extends keyof _TInterfaces>(type: _TKey, ..._params: Parameters<_TInterfaces[_TKey]>) {
+        return this._driver.emit(type, ..._params);
     }
 
     destroy(): boolean {
