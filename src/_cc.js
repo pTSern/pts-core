@@ -389,7 +389,7 @@ exports.methods = {
             console.warn('[pTS-Core] pTSAsset not found in cc.js');
             return [];
         }
-        const list = [];
+        const list = ['pTSAsset'];
         const nameMap = cc.js._nameToClass || {};
         for (const name in nameMap) {
             const cls = nameMap[name];
@@ -400,6 +400,87 @@ exports.methods = {
             }
         }
         return list.sort();
+    },
+
+    get_class_inheritance_chain(className) {
+        const ctor = cc.js.getClassByName(className) || cc[className];
+        if (!ctor || typeof ctor !== 'function') {
+            return ['cc.Asset', 'Asset', 'pTSAsset', className];
+        }
+        const getChain = (cc.Class && cc.Class.getInheritanceChain) || (cc.CCClass && cc.CCClass.getInheritanceChain);
+        const chain = [];
+        if (typeof getChain === 'function') {
+            try {
+                const raw = getChain(ctor) || [];
+                for (const item of raw) {
+                    const name = typeof item === 'string' ? item : (cc.js.getClassName(item) || item.name);
+                    if (name && !chain.includes(name)) {
+                        chain.push(name);
+                    }
+                }
+                chain.reverse();
+            } catch {}
+        }
+        if (chain.length === 0) {
+            chain.push(className);
+            let cur = ctor;
+            while (cur) {
+                const superCtor = cc.js.getSuper(cur);
+                if (!superCtor || superCtor === Object || superCtor === Function) break;
+                const superName = cc.js.getClassName(superCtor) || superCtor.name;
+                if (superName && !chain.includes(superName)) {
+                    chain.unshift(superName);
+                }
+                cur = superCtor;
+            }
+        }
+        if (!chain.includes('pTSAsset')) chain.unshift('pTSAsset');
+        if (!chain.includes('Asset')) chain.unshift('Asset');
+        if (!chain.includes('cc.Asset')) chain.unshift('cc.Asset');
+        return Array.from(new Set(chain));
+    },
+
+    get_all_pts_inheritance_chains() {
+        const baseCtor = cc.js.getClassByName('pTSAsset');
+        if (!baseCtor) return {};
+        const map = {};
+        const nameMap = cc.js._nameToClass || {};
+        const getChain = (cc.Class && cc.Class.getInheritanceChain) || (cc.CCClass && cc.CCClass.getInheritanceChain);
+
+        for (const name in nameMap) {
+            const cls = nameMap[name];
+            if (typeof cls === 'function' && (cls === baseCtor || cc.js.isChildClassOf(cls, baseCtor))) {
+                let chain = [];
+                if (typeof getChain === 'function') {
+                    try {
+                        const raw = getChain(cls) || [];
+                        for (const item of raw) {
+                            const n = typeof item === 'string' ? item : (cc.js.getClassName(item) || item.name);
+                            if (n && !chain.includes(n)) chain.push(n);
+                        }
+                        chain.reverse();
+                    } catch {}
+                }
+                if (chain.length === 0) {
+                    chain = [name];
+                    let cur = cls;
+                    while (cur) {
+                        const superCtor = cc.js.getSuper(cur);
+                        if (!superCtor || superCtor === Object || superCtor === Function) break;
+                        const superName = cc.js.getClassName(superCtor) || superCtor.name;
+                        if (superName && !chain.includes(superName)) {
+                            chain.unshift(superName);
+                        }
+                        cur = superCtor;
+                    }
+                }
+                if (!chain.includes('pTSAsset')) chain.unshift('pTSAsset');
+                if (!chain.includes('Asset')) chain.unshift('Asset');
+                if (!chain.includes('cc.Asset')) chain.unshift('cc.Asset');
+                map[name] = Array.from(new Set(chain));
+            }
+        }
+        return map;
     },
 
     getClassInfo(className) {

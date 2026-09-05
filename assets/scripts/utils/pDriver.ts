@@ -34,7 +34,7 @@ export class Handler<__TInterfaces_ extends Record<string, any>> implements IDri
     constructor() {
     }
 
-    public emit<_TKey extends keyof __TInterfaces_>(key: _TKey, ...args: Parameters<__TInterfaces_[_TKey]>): any[] {
+    public emit<_TKey extends keyof __TInterfaces_>(key: _TKey, ...args: Parameters<__TInterfaces_[_TKey]>): ReturnType<__TInterfaces_[_TKey]>[] {
         const waiter = this.__waiters_.get(key);
         if (waiter) {
             waiter.resolve();
