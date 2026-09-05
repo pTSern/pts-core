@@ -1,4 +1,4 @@
-import { __private, _decorator, Asset, Director, director, Game, game } from "cc";
+import { __private, _decorator, Asset, Director, director } from "cc";
 import { pDriver } from "./utils";
 
 const { ccclass } = _decorator;
