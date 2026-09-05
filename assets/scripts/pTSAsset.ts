@@ -1,4 +1,4 @@
-import { __private, _decorator, Asset } from "cc";
+import { __private, _decorator, Asset, Director, director, Game, game } from "cc";
 import { pDriver } from "./utils";
 
 const { ccclass } = _decorator;
@@ -9,9 +9,26 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = Record<string, 
     protected _onReleased?(): void;
     protected _isLoaded: boolean = false;
 
-    protected hydrate(): void {
+    protected hydrate(depsPromise?: Promise<any>): void {
         if (this._isLoaded) return;
         this._isLoaded = true;
+
+        const scenePromise = new Promise<void>((resolve) => {
+            if (director.getScene()) {
+                resolve();
+            } else {
+                director.once(Director.EVENT_AFTER_SCENE_LAUNCH, () => resolve(), this);
+            }
+        });
+
+        const readyPromise = Promise.all([scenePromise, depsPromise || Promise.resolve()]);
+        readyPromise.then(() => {
+            try {
+                this._onAwake?.();
+            } catch (err) {
+                console.error(`[pTSAsset] Error in _onAwake for ${(this as any).name || this.constructor.name}:`, err);
+            }
+        });
 
         this._onLoad?.();
     }
@@ -42,4 +59,6 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = Record<string, 
         this._onReleased?.();
         return _out;
     }
+
+    protected _onAwake?(): void
 }
