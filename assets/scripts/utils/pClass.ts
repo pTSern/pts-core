@@ -10,18 +10,18 @@ import { CC_IEnumable, CC_IEnumList } from "../interfaces/cc/CC.IEnumable";
  * pClass: All class-based patterns, binders, and decorators.
  */
 
-const _singletonPool: Record<pFlex.TKey, pFlex.TFunc> = js.createMap();
-const _persistentPool: WeakMap<pFlex.TCtor, Record<pFlex.TKey, any>> = new WeakMap();
-const _singletonKeys = pConst.KEYS.SINGLETON;
-const _waiters = new Map<Function, { promise: Promise<any>, resolve: pFlex.TFunc, resolved: boolean }>();
+const _$Map: Record<pFlex.TKey, pFlex.TFunc> = js.createMap();
+const _$Pool: WeakMap<pFlex.TCtor, Record<pFlex.TKey, any>> = new WeakMap();
+const _$Keys = pConst.KEYS.SINGLETON;
+const _$Waiter = new Map<Function, { promise: Promise<any>, resolve: pFlex.TFunc, resolved: boolean }>();
 
 // --- Helpers ---
 
 function _resolver(constructor: pFlex.TCtor) {
-    let data = _waiters.get(constructor);
+    let data = _$Waiter.get(constructor);
     if (!data) {
         data = { promise: Promise.resolve(), resolve: null, resolved: true };
-        _waiters.set(constructor, data);
+        _$Waiter.set(constructor, data);
     }
     data.resolve?.(instance(constructor));
     data.resolved = true;
@@ -146,13 +146,15 @@ export function emit<_TArg extends any[] = any[], _TReturn = any>(funcs: pFlex.T
 // --- Decorators & Patterns ---
 
 export function wait<T>(constructor: pFlex.TCtor<any, T>): Promise<T> {
-    let data = _waiters.get(constructor);
+    let data = _$Waiter.get(constructor);
     if (!data) {
         let resolve: any;
         const promise = new Promise<T>(rs => resolve = rs);
         data = { promise, resolve, resolved: false };
-        _waiters.set(constructor, data);
+
+        _$Waiter.set(constructor, data);
     }
+    data.promise.then(_ => console.log(`[Singleton] ${js.getClassName(constructor)} has been initialized.`, _));
     return data.resolved ? Promise.resolve(instance(constructor)) : data.promise;
 }
 
@@ -225,65 +227,82 @@ export function scriptable(name: string) {
 }
 
 export function instance<T>(_ctor: pFlex.TCtor<any, T> | string, ...args: any[]): T {
-    if (typeof _ctor === 'string') return _singletonPool[_ctor]?.(...args) ?? null;
-    const getter = _ctor[_singletonKeys.GETTER];
+    if (typeof _ctor === 'string') return _$Map[_ctor]?.(...args) ?? null;
+    const getter = _ctor[_$Keys.GETTER];
     if (getter) return getter(...args);
-    return _ctor[_singletonKeys.INSTANCE];
+    return _ctor[_$Keys.INSTANCE];
 }
 
-export function singleton(opt?: { initer?: string, destroyer?: string, wake?: 'Instantly' | 'None', pooler?: boolean, async?: boolean, name?: string }) {
+export function singleton(opt?: { initer?: string, destroyer?: string, wake?: 'Instantly' | 'None', pooler?: boolean, async?: boolean, name?: string, setup?: boolean }) {
     return (constructor: pFlex.TCtor) => {
         const isComp = constructor.prototype instanceof Component;
-        const config = { initer: isComp ? 'onLoad' : '_init', destroyer: isComp ? 'onDestroy' : '_clean', wake: 'Instantly', pooler: false, async: false, ...opt };
-        constructor[_singletonKeys.OPTION] = config;
+        const config = {
+            initer: isComp ? 'onLoad' : '_init',
+            destroyer: isComp ? 'onDestroy' : '_clean',
+            wake: isComp ? 'None' : 'Instantly',
+            pooler: false,
+            async: false,
+            setup: isComp ? false : true,
+            ...opt 
+        };
+        constructor[_$Keys.OPTION] = config;
+
+        const _oIniter = constructor.prototype[config.initer];
+        constructor.prototype[config.initer] = async function(...args: any[]) {
+            const _prm = _oIniter?.apply(this, ...args)
+            if(_prm instanceof Promise) {
+                await _prm;
+            }
+            constructor[_$Keys.INSTANCE] = this;
+            console.log(`[Singleton] ${js.getClassName(constructor)} initialized.`);
+            _resolver(constructor);
+        };
 
         if (isComp) {
-            const originIniter = constructor.prototype[config.initer];
-            constructor.prototype[config.initer] = function(...args: any[]) {
-                originIniter?.apply(this, args);
-                constructor[_singletonKeys.INSTANCE] = this;
-                _resolver(constructor);
-            };
-            constructor[_singletonKeys.GETTER] = () => {
-                if (!constructor[_singletonKeys.INSTANCE]) {
-                    constructor[_singletonKeys.INSTANCE] = director.getScene()?.getComponentInChildren(constructor);
-                    if (constructor[_singletonKeys.INSTANCE]) _resolver(constructor);
+            constructor[_$Keys.GETTER] = (...args: any[]) => {
+                if (!constructor[_$Keys.INSTANCE]) {
+                    constructor[_$Keys.INSTANCE] = director.getScene()?.getComponentInChildren(constructor);
+                    if (constructor[_$Keys.INSTANCE]) {
+                        config.setup && constructor[_$Keys.INSTANCE][config.initer]?.(...args);
+                        _resolver(constructor);
+                    }
                 }
-                return constructor[_singletonKeys.INSTANCE];
+                return constructor[_$Keys.INSTANCE];
             };
         } else {
-            constructor[_singletonKeys.GETTER] = (...args: any[]) => {
-                if (!constructor[_singletonKeys.INSTANCE]) {
-                    constructor[_singletonKeys.INSTANCE] = new constructor(...args);
-                    constructor[_singletonKeys.INSTANCE][config.initer]?.(...args);
+            constructor[_$Keys.GETTER] = (...args: any[]) => {
+                if (!constructor[_$Keys.INSTANCE]) {
+                    constructor[_$Keys.INSTANCE] = new constructor(...args);
+                    config.setup && constructor[_$Keys.INSTANCE][config.initer]?.(...args);
+                    console.log(`[Singleton] ${js.getClassName(constructor)} QUICK GET.`, constructor[_$Keys.INSTANCE]);
                     _resolver(constructor);
                 }
-                return constructor[_singletonKeys.INSTANCE];
+                return constructor[_$Keys.INSTANCE];
             };
-            if (config.wake === 'Instantly') instance(constructor);
         }
+        if (config.wake === 'Instantly') instance(constructor);
 
         const originDestroyer = constructor.prototype[config.destroyer];
         constructor.prototype[config.destroyer] = function(...args: any[]) {
             originDestroyer?.apply(this, args);
-            constructor[_singletonKeys.INSTANCE] = null;
+            constructor[_$Keys.INSTANCE] = null;
         };
 
-        if (config.pooler) _singletonPool[config.name || js.getClassName(constructor)] = constructor[_singletonKeys.GETTER];
+        if (config.pooler) _$Map[config.name || js.getClassName(constructor)] = constructor[_$Keys.GETTER];
     };
 }
 
 export function imps(...names: string[]) {
     return (constructor: pFlex.TCtor) => {
-        constructor[_singletonKeys.IMPL] ||= {};
-        names.forEach(n => constructor[_singletonKeys.IMPL][n] = true);
+        constructor[_$Keys.IMPL] ||= {};
+        names.forEach(n => constructor[_$Keys.IMPL][n] = true);
     };
 }
 
 export function persistent(opt: { key: string, initer?: string, destroyer?: string }) {
     return (constructor: pFlex.TCtor) => {
-        let pool = _persistentPool.get(constructor);
-        if (!pool) { pool = js.createMap(); _persistentPool.set(constructor, pool); }
+        let pool = _$Pool.get(constructor);
+        if (!pool) { pool = js.createMap(); _$Pool.set(constructor, pool); }
         const originIniter = constructor.prototype[opt.initer || 'onLoad'];
         constructor.prototype[opt.initer || 'onLoad'] = function(...args: any[]) {
             originIniter?.apply(this, args);
