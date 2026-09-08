@@ -217,7 +217,8 @@ function _syncPreviewSnapshot() {
     const editor = (globalThis as any).Editor || (typeof window !== 'undefined' && (window as any).Editor);
     if (editor && editor.Message && typeof editor.Message.send === 'function') {
         try {
-            editor.Message.send('pts-asset', 'sync-preview-data', snapshot);
+            const cleanSnapshot = JSON.parse(JSON.stringify(snapshot));
+            editor.Message.send('pts-asset', 'sync-preview-data', cleanSnapshot);
         } catch (err) {
             console.warn('[pTSAsset] Failed to send preview sync snapshot:', err);
         }
