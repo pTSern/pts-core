@@ -1,13 +1,13 @@
 
 import { Enum, js, v3 } from "cc";
-import { EDITOR, EDITOR_NOT_IN_PREVIEW, DEV, DEBUG, BUILD } from "cc/env";
+import { EDITOR, EDITOR_NOT_IN_PREVIEW, DEV } from "cc/env";
 
 /**
  * pConst: Project constants, environment flags, and keys.
  */
 
 // Macros / Env Flags
-export const IS_TEST = DEV || DEBUG;
+export const IS_TEST = DEV;
 export const IS_EDITOR = EDITOR;
 export const LOG_LEVEL = 0;
 
@@ -69,15 +69,6 @@ export const EDITOR_ONLY_IN_PREVIEW = EDITOR && !EDITOR_NOT_IN_PREVIEW;
 export const RESOLVER = Promise.resolve()
 export const THROWER = (me: string) => { throw new Error(`${me} does not being initialized. Please double check`) }
 export const EDITOR_VISIBLE_IN_PREVIEW = () => EDITOR_ONLY_IN_PREVIEW
-
-if (typeof globalThis !== 'undefined') {
-    try {
-        Object.defineProperty(globalThis, '__pTS_IS_PREVIEW__', {
-            get: () => !BUILD && EDITOR && !EDITOR_NOT_IN_PREVIEW,
-            configurable: true
-        });
-    } catch {}
-}
 
 export const KEYS = {
     POOL: {

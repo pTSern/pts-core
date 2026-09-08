@@ -16,6 +16,7 @@ class _Helper<_TType> {
     async refresh() {
         if(!this.hooker) return;
 
+        await Data_Manager.wait();
         const _data = Data_Manager.get(this.key);
         if(_data === undefined || _data === null) return;
 
