@@ -538,6 +538,28 @@ function createLiveSnapshot() {
     return snapshot;
 }
 
+function isChildOfPtsAsset(cls, baseCtor) {
+    if (!cls || typeof cls !== 'function') return false;
+    if (cls === baseCtor) return true;
+    try {
+        if (cc.js.isChildClassOf(cls, baseCtor)) return true;
+    } catch {}
+    let cur = cls;
+    while (cur && cur !== Object && cur !== Function) {
+        try {
+            const superCtor = cc.js.getSuper(cur);
+            if (!superCtor || superCtor === Object || superCtor === Function) break;
+            if (superCtor === baseCtor) return true;
+            const superName = cc.js.getClassName(superCtor) || superCtor.name;
+            if (superName === 'pTSAsset' || superName === 'pTSAsset_Data') return true;
+            cur = superCtor;
+        } catch {
+            break;
+        }
+    }
+    return false;
+}
+
 let _previewSyncInterval = null;
 
 // ─── Lifecycle Exports ───
@@ -670,7 +692,7 @@ exports.methods = {
         const nameMap = cc.js._nameToClass || {};
         for (const name in nameMap) {
             const cls = nameMap[name];
-            if (typeof cls === 'function' && cls !== baseCtor && cc.js.isChildClassOf(cls, baseCtor)) {
+            if (typeof cls === 'function' && cls !== baseCtor && isChildOfPtsAsset(cls, baseCtor)) {
                 if (!list.includes(name)) {
                     list.push(name);
                 }
@@ -682,7 +704,7 @@ exports.methods = {
     get_class_inheritance_chain(className) {
         const ctor = cc.js.getClassByName(className) || cc[className];
         if (!ctor || typeof ctor !== 'function') {
-            return ['cc.Asset', 'Asset', 'pTSAsset', className];
+            return ['cc.Object', 'Eventified', 'cc.Asset', 'Asset', 'pTSAsset', className];
         }
         const getChain = (cc.Class && cc.Class.getInheritanceChain) || (cc.CCClass && cc.CCClass.getInheritanceChain);
         const chain = [];
@@ -714,6 +736,8 @@ exports.methods = {
         if (!chain.includes('pTSAsset')) chain.unshift('pTSAsset');
         if (!chain.includes('Asset')) chain.unshift('Asset');
         if (!chain.includes('cc.Asset')) chain.unshift('cc.Asset');
+        if (!chain.includes('Eventified')) chain.unshift('Eventified');
+        if (!chain.includes('cc.Object')) chain.unshift('cc.Object');
         return Array.from(new Set(chain));
     },
 
@@ -726,7 +750,7 @@ exports.methods = {
 
         for (const name in nameMap) {
             const cls = nameMap[name];
-            if (typeof cls === 'function' && (cls === baseCtor || cc.js.isChildClassOf(cls, baseCtor))) {
+            if (typeof cls === 'function' && (cls === baseCtor || isChildOfPtsAsset(cls, baseCtor))) {
                 let chain = [];
                 if (typeof getChain === 'function') {
                     try {
@@ -754,6 +778,8 @@ exports.methods = {
                 if (!chain.includes('pTSAsset')) chain.unshift('pTSAsset');
                 if (!chain.includes('Asset')) chain.unshift('Asset');
                 if (!chain.includes('cc.Asset')) chain.unshift('cc.Asset');
+                if (!chain.includes('Eventified')) chain.unshift('Eventified');
+                if (!chain.includes('cc.Object')) chain.unshift('cc.Object');
                 map[name] = Array.from(new Set(chain));
             }
         }
