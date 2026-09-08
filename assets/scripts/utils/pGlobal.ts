@@ -99,10 +99,10 @@ export function error(level: _TLogLevel, ...args: any[]) {
 }
 
 // Compression / Decompression
-export async function gzip(content: string, format: CompressionFormat = 'gzip'): Promise<string> {
+export async function gzip(content: string): Promise<string> {
     if (typeof CompressionStream !== "undefined") {
         const blob = new Blob([new TextEncoder().encode(content)]);
-        const stream = blob.stream().pipeThrough(new CompressionStream(format));
+        const stream = blob.stream().pipeThrough(new CompressionStream("gzip"));
         const response = new Response(stream);
         const buffer = await response.arrayBuffer();
         const bytes = new Uint8Array(buffer);
@@ -115,7 +115,7 @@ export async function gzip(content: string, format: CompressionFormat = 'gzip'):
     throw new Error("[pGlobal] CompressionStream is not supported on this platform.");
 }
 
-export async function unzip(base64: string, format: CompressionFormat = 'gzip'): Promise<string> {
+export async function unzip(base64: string): Promise<string> {
     const binString = atob(base64);
     const bytes = new Uint8Array(binString.length);
     for (let i = 0; i < binString.length; i++) {
@@ -124,7 +124,7 @@ export async function unzip(base64: string, format: CompressionFormat = 'gzip'):
 
     if (typeof DecompressionStream !== "undefined") {
         const blob = new Blob([bytes as any]);
-        const stream = blob.stream().pipeThrough(new DecompressionStream(format));
+        const stream = blob.stream().pipeThrough(new DecompressionStream("gzip"));
         const response = new Response(stream);
         return await response.text();
     } else {
