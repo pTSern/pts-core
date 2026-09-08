@@ -13,19 +13,16 @@ function _is_CC_IEnumable<_TKey extends pFlex.TKey>(target: any | Record<_TKey, 
 
 export const CC_IEnumable = Object.assign(_is_CC_IEnumable, {
     is: Enum.isEnum,
-    generator: function<_TKey extends pFlex.TKey>(target: Record<_TKey, any> | _TKey[], out?: pFlex.TFunc<[_TKey, string | number], _TKey>): CC_IEnumable<_TKey> {
+    generator: function<_TKey extends pFlex.TKey>(target: Record<_TKey, any> | _TKey[]): CC_IEnumable<_TKey> {
         const _obj = { __enums__: null } as CC_IEnumable<_TKey>
         if(!target) return _obj;
 
         if(Array.isArray(target)) {
             //@ts-ignore
-            target.forEach((_, i) => { _obj[_] = out ? out(_, i) : _ } )
+            target.forEach(_ => _obj[_] = _ )
         } else {
-            for(const _key in target) {
-                _obj[_key as _TKey] = out ? out(target[_key], _key) : target[_key]
-            }
-            _obj['__enums__'] = null;
-            return _obj
+            target['__enums__'] = null;
+            return target as CC_IEnumable<_TKey>
         }
 
         return _obj;
