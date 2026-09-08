@@ -1,22 +1,20 @@
 import { _decorator } from "cc";
 import { Smart_Label_Hooker } from "./Smart.Label.Hooker";
-import * as pConst from "db://pts-core/scripts/utils/pConst";
-import * as pString from "db://pts-core/scripts/utils/pString";
+import { pConst, pString } from "db://pts-core/scripts/utils";
 import { editor_property } from "db://pts-core/scripts/utils/pClass";
 
-const { ccclass, property } = _decorator;
-const CORE_GROUP = pConst?.GROUPS?.CORE || { name: 'Core', id: '9', displayOrder: 1000 };
+const { ccclass, property } = _decorator
 
 @ccclass('Smart_Label_Hooker_Number')
 export class Smart_Label_Hooker_Number extends Smart_Label_Hooker<number> {
 
-    @property({ group: CORE_GROUP })
+    @property({ group: pConst.GROUPS.CORE })
     isUseKMBFormat: boolean = true;
 
-    @property({ group: CORE_GROUP })
+    @property({ group: pConst.GROUPS.CORE })
     isUseDotFormat: boolean = false;
 
-    @property({ group: CORE_GROUP, visible() { return this.isUseDotFormat } })
+    @property({ group: pConst.GROUPS.CORE, visible() { return this.isUseDotFormat } })
     dot: string = '.';
 
     @editor_property()
