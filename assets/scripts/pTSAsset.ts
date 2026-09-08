@@ -1,6 +1,7 @@
 import { __private, _decorator, Asset, Director, director } from "cc";
 import { BUILD } from "cc/env";
-import { pDriver, pConst } from "./utils";
+import * as pDriver from "./utils/pDriver";
+import * as pConst from "./utils/pConst";
 import { IS_TEST } from "./utils/pConst";
 
 const { ccclass } = _decorator;
