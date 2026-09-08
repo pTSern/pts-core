@@ -12,12 +12,7 @@ import { CC_IEnumable, CC_IEnumList } from "../interfaces/cc/CC.IEnumable";
 
 const _$Map: Record<pFlex.TKey, pFlex.TFunc> = js.createMap();
 const _$Pool: WeakMap<pFlex.TCtor, Record<pFlex.TKey, any>> = new WeakMap();
-const _$Keys = pConst?.KEYS?.SINGLETON || {
-    INSTANCE: Symbol('__pTS_instance__'),
-    GETTER: Symbol('__pTS_get_instance__'),
-    OPTION: Symbol('__pTS_option__'),
-    IMPL: Symbol('__pTS_implements__'),
-};
+const _$Keys = pConst.KEYS.SINGLETON;
 const _$Waiter = new Map<Function, { promise: Promise<any>, resolve: pFlex.TFunc, resolved: boolean }>();
 
 // --- Helpers ---
@@ -191,14 +186,12 @@ export function logcat(who: any, method: 'log' | 'warn' | 'error') {
 function _$hould(mode: _TMode) {
     let should = false;
 
-    const isPreview = pConst?.EDITOR_ONLY_IN_PREVIEW ?? (EDITOR && !EDITOR_NOT_IN_PREVIEW);
-
     if (mode === 'EDITOR_NOT_IN_PREVIEW') should = (EDITOR && EDITOR_NOT_IN_PREVIEW);
     else if (mode === 'EDITOR') should = EDITOR;
-    else if (mode === 'EDITOR_ONLY_IN_PREVIEW') should = isPreview;
-    else if (mode === 'RUNTIME') should = (!EDITOR) || isPreview;
+    else if (mode === 'EDITOR_ONLY_IN_PREVIEW') should = pConst.EDITOR_ONLY_IN_PREVIEW;
+    else if (mode === 'RUNTIME') should = (!EDITOR) || (pConst.EDITOR_ONLY_IN_PREVIEW)
 
-    return should;
+    return should
 }
 
 export function editor_property(type?: any, opt?: { name?: string, multiline?: boolean, override?: boolean, kill?: boolean, writable?: boolean }, mode: _TMode = 'EDITOR_ONLY_IN_PREVIEW') {
@@ -219,8 +212,7 @@ export function editor_property(type?: any, opt?: { name?: string, multiline?: b
 export function logger(name?: string) {
     return (constructor: pFlex.TCtor) => {
         const className = name || js.getClassName(constructor);
-        const levels = pConst?.LOG_LEVELS || ['log', 'warn', 'error'];
-        for (const level of levels) {
+        for (const level of pConst.LOG_LEVELS) {
             constructor.prototype[level] = console[level].bind(console, `[${className}] ${level.toUpperCase()} >>>`);
         }
     };
