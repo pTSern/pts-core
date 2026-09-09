@@ -92,6 +92,20 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = Record<string, 
     }
 
     protected _onAwake?(): void
+
+    /**
+     * Declared hook invoked when this .pts asset is focused in the Inspector.
+     * Subclasses can declare and implement this method.
+     */
+    onFocusInEditor?(): void;
+
+    notifyFocusInEditor(): void {
+        try {
+            this.onFocusInEditor?.();
+        } catch (err) {
+            console.error(`[pTSAsset] Error in onFocusInEditor for ${(this as any).name || this.constructor.name}:`, err);
+        }
+    }
 }
 
 function _safeSerializeValue(val: any, depth: number = 0): any {
@@ -180,6 +194,9 @@ function _syncPreviewSnapshot() {
                 for (const uuid of Object.keys(byUuid)) {
                     const inst = byUuid[uuid];
                     if (inst) {
+                        try {
+                            inst.onFocusInEditor?.();
+                        } catch (err) {}
                         const vals = _extractInstanceValues(inst);
                         snapshot[uuid] = {
                             uuid: uuid,
@@ -199,6 +216,9 @@ function _syncPreviewSnapshot() {
     if (liveMap && typeof liveMap.forEach === 'function') {
         liveMap.forEach((inst, uuid) => {
             if (inst && !snapshot[uuid]) {
+                try {
+                    inst.onFocusInEditor?.();
+                } catch (err) {}
                 const vals = _extractInstanceValues(inst);
                 const name = (inst as any).name || (inst.constructor ? inst.constructor.name : '');
                 snapshot[uuid] = {
