@@ -229,7 +229,6 @@ function _isValEqual(a, b) {
 }
 
 let _cachedInstanceAttrs = {};
-let _cachedArrayInstanceAttrs = {};
 
 function _applyInstanceAttrsToDump(instance, dump, className = null) {
     if (!instance || !dump || !dump.value) return;
@@ -277,7 +276,6 @@ function _applyInstanceAttrsToDump(instance, dump, className = null) {
 
     if (className) {
         _cachedInstanceAttrs[className] = _extractInstanceAttrs(instance);
-        _cachedArrayInstanceAttrs[className] = _extractArrayInstanceAttrs(instance);
     }
 }
 
@@ -328,19 +326,36 @@ function _serializeInstance(instance) {
 
         if (Array.isArray(val)) {
             result[p] = val.map(item => {
-                if (item && typeof item === 'object' && item.constructor && item.constructor !== Object) {
-                    const itemCtor = item.constructor;
-                    const itemTypeName = cc.js.getClassName(itemCtor) || itemCtor.name;
-                    if (cc.js.isChildClassOf(itemCtor, cc.Asset)) {
+                if (item && typeof item === 'object') {
+                    if (item instanceof cc.Asset) {
+                        const itemCtor = item.constructor;
+                        const itemTypeName = cc.js.getClassName(itemCtor) || itemCtor.name;
                         return {
                             __type__: itemTypeName,
                             __value__: { uuid: item._uuid || item.uuid || '' }
                         };
                     }
-                    return {
-                        __type__: itemTypeName,
-                        __value__: _serializeInstance(item)
-                    };
+                    if (item.constructor && item.constructor !== Object) {
+                        const itemCtor = item.constructor;
+                        const itemTypeName = cc.js.getClassName(itemCtor) || itemCtor.name;
+                        if (cc.js.isChildClassOf(itemCtor, cc.Asset)) {
+                            return {
+                                __type__: itemTypeName,
+                                __value__: { uuid: item._uuid || item.uuid || '' }
+                            };
+                        }
+                        return {
+                            __type__: itemTypeName,
+                            __value__: _serializeInstance(item)
+                        };
+                    }
+                    if (item.uuid || (item.__value__ && item.__value__.uuid)) {
+                        const u = item.uuid || item.__value__.uuid;
+                        return {
+                            __type__: item.__type__ || 'cc.Asset',
+                            __value__: { uuid: u }
+                        };
+                    }
                 }
                 return item;
             });
@@ -406,32 +421,6 @@ function _extractInstanceAttrs(instance) {
     return enumLists;
 }
 
-function _extractArrayInstanceAttrs(instance) {
-    const del = cc.Class.Attr.DELIMETER || '$_$';
-    const arrayEnumLists = {};
-    if (!instance) return arrayEnumLists;
-    for (const k of Object.keys(instance)) {
-        const arr = instance[k];
-        if (Array.isArray(arr) && arr.length > 0) {
-            arrayEnumLists[k] = [];
-            for (let i = 0; i < arr.length; i++) {
-                const item = arr[i];
-                const itemEnums = {};
-                if (item && item.__instance_attrs__) {
-                    for (const [attrKey, attrVal] of Object.entries(item.__instance_attrs__)) {
-                        const [p, a] = attrKey.split(del);
-                        if (a === 'enumList') {
-                            itemEnums[p] = attrVal;
-                        }
-                    }
-                }
-                arrayEnumLists[k].push(itemEnums);
-            }
-        }
-    }
-    return arrayEnumLists;
-}
-
 function _populateInstance(instance, values, prevValues = null, skipSetters = false) {
     if (!instance || !values || typeof values !== 'object') return;
     // Sort keys so backing fields (e.g. _bundle) are populated before getter/setter properties (e.g. bundle)
@@ -472,13 +461,27 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
                     const prevArr = prevValues && Array.isArray(prevValues[k]) ? prevValues[k] : null;
                     for (let i = 0; i < val.length; i++) {
                         const itemVal = val[i];
-                        if (itemVal && typeof itemVal === 'object' && itemVal.__type__) {
-                            const itemCtor = cc.js.getClassByName(itemVal.__type__);
-                            if (itemCtor) {
-                                const itemInst = new itemCtor();
-                                const itemPrev = prevArr && prevArr[i] ? (prevArr[i].__value__ || prevArr[i]) : null;
-                                _populateInstance(itemInst, itemVal.__value__ || itemVal, itemPrev, skipSetters);
-                                arr.push(itemInst);
+                        if (itemVal && typeof itemVal === 'object') {
+                            if (itemVal.__type__) {
+                                const itemCtor = cc.js.getClassByName(itemVal.__type__);
+                                if (itemCtor) {
+                                    if (cc.js.isChildClassOf(itemCtor, cc.Asset)) {
+                                        const uuid = itemVal.__value__?.uuid || itemVal.uuid;
+                                        const asset = (uuid && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(uuid) : null;
+                                        arr.push(asset);
+                                        continue;
+                                    }
+                                    const itemInst = new itemCtor();
+                                    const itemPrev = prevArr && prevArr[i] ? (prevArr[i].__value__ || prevArr[i]) : null;
+                                    _populateInstance(itemInst, itemVal.__value__ || itemVal, itemPrev, skipSetters);
+                                    arr.push(itemInst);
+                                    continue;
+                                }
+                            }
+                            if (itemVal.uuid || (itemVal.__value__ && itemVal.__value__.uuid)) {
+                                const uuid = itemVal.uuid || itemVal.__value__.uuid;
+                                const asset = (uuid && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(uuid) : null;
+                                arr.push(asset);
                                 continue;
                             }
                         }
@@ -581,6 +584,10 @@ function _getComponentDumpByName(className, currentValues) {
 let _lastEvaluatedValues = {};
 
 function _evaluatePtsLive(className, currentValues) {
+    if (isPreviewModeRunning()) {
+        return { isRuntime: true, error: 'Preview/Runtime mode is active' };
+    }
+
     const ctor = cc.js.getClassByName(className);
     if (!ctor) {
         return { error: `Class ${className} not found` };
@@ -642,7 +649,6 @@ function _evaluatePtsLive(className, currentValues) {
 
     const arrayVisibility = {};
     const arrayGetters = {};
-    const arrayEnumLists = {};
     if (currentValues && typeof currentValues === 'object') {
         for (const k in currentValues) {
             const arr = currentValues[k];
@@ -657,7 +663,6 @@ function _evaluatePtsLive(className, currentValues) {
 
                     arrayVisibility[k] = [];
                     arrayGetters[k] = [];
-                    arrayEnumLists[k] = [];
 
                     for (let i = 0; i < arr.length; i++) {
                         const rawItem = arr[i];
@@ -694,17 +699,6 @@ function _evaluatePtsLive(className, currentValues) {
                             } catch (e) {}
                         }
                         arrayGetters[k].push(itemGetVal);
-
-                        const itemEnumList = {};
-                        if (itemInst.__instance_attrs__) {
-                            for (const [attrKey, attrVal] of Object.entries(itemInst.__instance_attrs__)) {
-                                const [p, a] = attrKey.split(del);
-                                if (a === 'enumList') {
-                                    itemEnumList[p] = attrVal;
-                                }
-                            }
-                        }
-                        arrayEnumLists[k].push(itemEnumList);
                     }
                 }
             }
@@ -712,27 +706,6 @@ function _evaluatePtsLive(className, currentValues) {
     }
 
     const cachedEnumLists = _cachedInstanceAttrs[className] || {};
-    const cachedArrayEnumLists = _cachedArrayInstanceAttrs[className] || {};
-
-    const finalArrayEnumLists = {};
-    if (cachedArrayEnumLists) {
-        for (const k in cachedArrayEnumLists) {
-            finalArrayEnumLists[k] = [...cachedArrayEnumLists[k]];
-        }
-    }
-    for (const k in arrayEnumLists) {
-        if (!finalArrayEnumLists[k]) {
-            finalArrayEnumLists[k] = arrayEnumLists[k];
-        } else {
-            const freshArr = arrayEnumLists[k];
-            for (let i = 0; i < freshArr.length; i++) {
-                if (freshArr[i] && Object.keys(freshArr[i]).length > 0) {
-                    finalArrayEnumLists[k][i] = Object.assign({}, finalArrayEnumLists[k][i] || {}, freshArr[i]);
-                }
-            }
-        }
-    }
-
     const finalEnumLists = Object.assign({}, cachedEnumLists);
     for (const [k, v] of Object.entries(enumLists)) {
         if (v && Object.keys(v).length > 0) {
@@ -746,8 +719,7 @@ function _evaluatePtsLive(className, currentValues) {
         visibility: visibility,
         arrayVisibility: arrayVisibility,
         arrayGetters: arrayGetters,
-        enumLists: finalEnumLists,
-        arrayEnumLists: finalArrayEnumLists
+        enumLists: finalEnumLists
     };
 }
 
@@ -756,22 +728,14 @@ function _evaluatePtsLive(className, currentValues) {
 function isPreviewModeRunning() {
     try {
         if (typeof globalThis !== 'undefined' && typeof globalThis.__pTS_IS_PREVIEW__ === 'boolean') {
-            return globalThis.__pTS_IS_PREVIEW__;
-        }
-    } catch {}
-
-    try {
-        if (typeof cc !== 'undefined' && cc.game) {
-            if (!cc.game.isPaused() && !cc.game._paused) {
-                return true;
-            }
+            if (globalThis.__pTS_IS_PREVIEW__) return true;
         }
     } catch {}
 
     try {
         if (typeof cce !== 'undefined') {
-            if (cce.Engine && cce.Engine.isPlaying) return true;
-            if (cce.PlayMode && cce.PlayMode.isPlaying) return true;
+            if (cce.Engine && (cce.Engine.isPlaying || cce.Engine.isPlayMode)) return true;
+            if (cce.PlayMode && (cce.PlayMode.isPlaying || cce.PlayMode.isPlayMode)) return true;
         }
     } catch {}
 
@@ -1202,7 +1166,28 @@ exports.methods = {
 
         try {
             if (target) {
-                target[propName] = newValue;
+                if (Array.isArray(target) && !isNaN(Number(propName))) {
+                    const idx = Number(propName);
+                    let valToAssign = newValue;
+                    if (typeof newValue === 'string' && newValue.includes('-')) {
+                        valToAssign = (cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(newValue) : null;
+                    } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue.__value__?.uuid)) {
+                        const u = newValue.uuid || newValue.__value__?.uuid;
+                        valToAssign = (u && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(u) : null;
+                    }
+                    target[idx] = valToAssign;
+                } else if (parts.length === 1 && Array.isArray(newValue)) {
+                    // Array property was already populated with proper CCClass or Asset instances
+                    // by _populateInstance(instance, currentValues). Only invoke setter if defined.
+                    const desc = _findPropertyDescriptor(instance, propName);
+                    if (desc && typeof desc.set === 'function') {
+                        try {
+                            target[propName] = instance[propName];
+                        } catch (e) {}
+                    }
+                } else {
+                    target[propName] = newValue;
+                }
             }
         } catch (setErr) {
             console.error(`[pTS-Core] Error applying setter for ${propPath}:`, setErr);
@@ -1226,9 +1211,7 @@ exports.methods = {
 
         // 6. Extract dynamic instance attributes (enumLists)
         const enumLists = _extractInstanceAttrs(instance);
-        const arrayEnumLists = _extractArrayInstanceAttrs(instance);
         _cachedInstanceAttrs[className] = enumLists;
-        _cachedArrayInstanceAttrs[className] = arrayEnumLists;
 
         // 7. Extract dynamic getters & visibility
         const evalResult = _evaluatePtsLive(className, updatedValues);
@@ -1238,7 +1221,6 @@ exports.methods = {
             values: updatedValues,
             dump: updatedDump,
             enumLists: Object.assign({}, evalResult.enumLists || {}, enumLists),
-            arrayEnumLists: Object.assign({}, evalResult.arrayEnumLists || {}, arrayEnumLists),
             visibility: evalResult.visibility,
             arrayVisibility: evalResult.arrayVisibility,
             getters: evalResult.getters,
