@@ -164,7 +164,355 @@ function _toDumperData(target) {
     }
 }
 
-function _getComponentDumpByName(className) {
+function _findPropertyDescriptor(obj, prop) {
+    let curr = obj;
+    while (curr && curr !== Object.prototype) {
+        const desc = Object.getOwnPropertyDescriptor(curr, prop);
+        if (desc) return desc;
+        curr = Object.getPrototypeOf(curr);
+    }
+    return null;
+}
+
+function _getGettersOfClass(ctor) {
+    const getters = {};
+    if (!ctor) return getters;
+    const proto = ctor.prototype;
+    if (!proto) return getters;
+
+    const props = ctor.__props__ || [];
+    for (const p of props) {
+        const desc = _findPropertyDescriptor(proto, p);
+        if (desc && typeof desc.get === 'function') {
+            getters[p] = {
+                hasSetter: typeof desc.set === 'function',
+                readonly: typeof desc.set !== 'function'
+            };
+        }
+    }
+    return getters;
+}
+
+// ─── Monkeypatch cc.Class.Attr.setClassAttr for per-instance attributes ───
+if (typeof cc !== 'undefined' && cc.Class && cc.Class.Attr) {
+    if (!cc.Class.Attr.__pts_instance_patched__) {
+        cc.Class.Attr.__pts_instance_patched__ = true;
+        const _origSetClassAttr = cc.Class.Attr.setClassAttr;
+        cc.Class.Attr.setClassAttr = function (target, propName, attrName, value) {
+            if (target && typeof target === 'object' && typeof target !== 'function') {
+                const del = cc.Class.Attr.DELIMETER || '$_$';
+                const attrKey = propName + del + attrName;
+                target.__instance_attrs__ = target.__instance_attrs__ || {};
+                target.__instance_attrs__[attrKey] = value;
+                target[attrKey] = value;
+            }
+            return _origSetClassAttr.apply(this, arguments);
+        };
+    }
+}
+
+function _isValEqual(a, b) {
+    if (a === b) return true;
+    if (a === null || b === null || a === undefined || b === undefined) return a === b;
+    if (typeof a !== typeof b) return false;
+    if (typeof a === 'object') {
+        const uuidA = a.__uuid__ || a.uuid;
+        const uuidB = b.__uuid__ || b.uuid;
+        if (uuidA !== undefined || uuidB !== undefined) {
+            return uuidA === uuidB;
+        }
+        try {
+            return JSON.stringify(a) === JSON.stringify(b);
+        } catch {}
+    }
+    return false;
+}
+
+let _cachedInstanceAttrs = {};
+let _cachedArrayInstanceAttrs = {};
+
+function _applyInstanceAttrsToDump(instance, dump, className = null) {
+    if (!instance || !dump || !dump.value) return;
+    const del = cc.Class.Attr.DELIMETER || '$_$';
+
+    if (instance.__instance_attrs__) {
+        for (const [attrFullKey, attrVal] of Object.entries(instance.__instance_attrs__)) {
+            const [pName, aName] = attrFullKey.split(del);
+            if (dump.value[pName]) {
+                dump.value[pName][aName] = attrVal;
+            }
+        }
+    }
+
+    for (const propName of Object.keys(instance)) {
+        if (Array.isArray(instance[propName]) && dump.value[propName] && Array.isArray(dump.value[propName].value)) {
+            for (let i = 0; i < instance[propName].length; i++) {
+                const itemInst = instance[propName][i];
+                const itemDump = dump.value[propName].value[i];
+                if (itemInst && itemInst.__instance_attrs__ && itemDump) {
+                    for (const [attrFullKey, attrVal] of Object.entries(itemInst.__instance_attrs__)) {
+                        const [pName, aName] = attrFullKey.split(del);
+                        const targetSub = (itemDump.value && itemDump.value[pName]) || itemDump[pName];
+                        if (targetSub) {
+                            targetSub[aName] = attrVal;
+                        }
+                    }
+                }
+            }
+
+            if (instance[propName].length > 0 && dump.value[propName].elementTypeData) {
+                const firstItem = instance[propName][0];
+                if (firstItem && firstItem.__instance_attrs__) {
+                    for (const [attrFullKey, attrVal] of Object.entries(firstItem.__instance_attrs__)) {
+                        const [pName, aName] = attrFullKey.split(del);
+                        const elemTarget = (dump.value[propName].elementTypeData.value && dump.value[propName].elementTypeData.value[pName]) || dump.value[propName].elementTypeData[pName];
+                        if (elemTarget) {
+                            elemTarget[aName] = attrVal;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (className) {
+        _cachedInstanceAttrs[className] = _extractInstanceAttrs(instance);
+        _cachedArrayInstanceAttrs[className] = _extractArrayInstanceAttrs(instance);
+    }
+}
+
+function _translateDump(dumpValue, path = '') {
+    if (!dumpValue || typeof dumpValue !== 'object') return;
+    if (Array.isArray(dumpValue)) {
+        dumpValue.forEach((item, index) => {
+            if (item && typeof item === 'object') {
+                item.name = `[${index}]`;
+                item.path = path ? `${path}.${index}` : `${index}`;
+                if (item.value && typeof item.value === 'object') {
+                    _translateDump(item.value, item.path);
+                }
+                delete item.displayName;
+            }
+        });
+        return;
+    }
+    for (const name of Object.keys(dumpValue)) {
+        const item = dumpValue[name];
+        if (item && typeof item === 'object') {
+            item.name = name;
+            item.path = path ? `${path}.${name}` : name;
+            if (item.value && typeof item.value === 'object') {
+                _translateDump(item.value, item.path);
+            }
+        }
+    }
+}
+
+function _serializeInstance(instance) {
+    if (!instance || typeof instance !== 'object') return instance;
+    const ctor = instance.constructor;
+    if (!ctor || ctor === Object) return instance;
+
+    const props = ctor.__props__ || Object.keys(instance);
+    const gettersInfo = _getGettersOfClass(ctor);
+    const result = {};
+
+    // 1. Process CCClass declared properties
+    for (const p of props) {
+        if (gettersInfo[p] && gettersInfo[p].readonly) {
+            continue;
+        }
+
+        const val = instance[p];
+        if (val === undefined) continue;
+
+        if (Array.isArray(val)) {
+            result[p] = val.map(item => {
+                if (item && typeof item === 'object' && item.constructor && item.constructor !== Object) {
+                    const itemCtor = item.constructor;
+                    const itemTypeName = cc.js.getClassName(itemCtor) || itemCtor.name;
+                    if (cc.js.isChildClassOf(itemCtor, cc.Asset)) {
+                        return {
+                            __type__: itemTypeName,
+                            __value__: { uuid: item._uuid || item.uuid || '' }
+                        };
+                    }
+                    return {
+                        __type__: itemTypeName,
+                        __value__: _serializeInstance(item)
+                    };
+                }
+                return item;
+            });
+        } else if (val && typeof val === 'object') {
+            const valCtor = val.constructor;
+            if (valCtor && valCtor !== Object) {
+                const valTypeName = cc.js.getClassName(valCtor) || valCtor.name;
+                if (cc.js.isChildClassOf(valCtor, cc.Asset)) {
+                    result[p] = {
+                        __type__: valTypeName,
+                        __value__: { uuid: val._uuid || val.uuid || '' }
+                    };
+                } else if (cc.js.isChildClassOf(valCtor, cc.ValueType)) {
+                    result[p] = {
+                        __type__: valTypeName,
+                        __value__: Object.assign({}, val)
+                    };
+                } else {
+                    result[p] = {
+                        __type__: valTypeName,
+                        __value__: _serializeInstance(val)
+                    };
+                }
+            } else {
+                result[p] = val;
+            }
+        } else {
+            result[p] = val;
+        }
+    }
+
+    // 2. Include backing fields starting with '_' that might not be in __props__
+    for (const k of Object.keys(instance)) {
+        if (k.startsWith('_') && !(k in result) && !k.startsWith('__')) {
+            const v = instance[k];
+            if (v && typeof v === 'object' && v.constructor && v.constructor !== Object && !Array.isArray(v)) {
+                const vCtor = v.constructor;
+                const vTypeName = cc.js.getClassName(vCtor) || vCtor.name;
+                result[k] = {
+                    __type__: vTypeName,
+                    __value__: _serializeInstance(v)
+                };
+            } else {
+                result[k] = v;
+            }
+        }
+    }
+
+    return result;
+}
+
+function _extractInstanceAttrs(instance) {
+    const del = cc.Class.Attr.DELIMETER || '$_$';
+    const enumLists = {};
+    if (instance && instance.__instance_attrs__) {
+        for (const [attrKey, attrVal] of Object.entries(instance.__instance_attrs__)) {
+            const [p, a] = attrKey.split(del);
+            if (a === 'enumList') {
+                enumLists[p] = attrVal;
+            }
+        }
+    }
+    return enumLists;
+}
+
+function _extractArrayInstanceAttrs(instance) {
+    const del = cc.Class.Attr.DELIMETER || '$_$';
+    const arrayEnumLists = {};
+    if (!instance) return arrayEnumLists;
+    for (const k of Object.keys(instance)) {
+        const arr = instance[k];
+        if (Array.isArray(arr) && arr.length > 0) {
+            arrayEnumLists[k] = [];
+            for (let i = 0; i < arr.length; i++) {
+                const item = arr[i];
+                const itemEnums = {};
+                if (item && item.__instance_attrs__) {
+                    for (const [attrKey, attrVal] of Object.entries(item.__instance_attrs__)) {
+                        const [p, a] = attrKey.split(del);
+                        if (a === 'enumList') {
+                            itemEnums[p] = attrVal;
+                        }
+                    }
+                }
+                arrayEnumLists[k].push(itemEnums);
+            }
+        }
+    }
+    return arrayEnumLists;
+}
+
+function _populateInstance(instance, values, prevValues = null, skipSetters = false) {
+    if (!instance || !values || typeof values !== 'object') return;
+    // Sort keys so backing fields (e.g. _bundle) are populated before getter/setter properties (e.g. bundle)
+    const keys = Object.keys(values).sort((a, b) => {
+        const aIsUnder = a.startsWith('_');
+        const bIsUnder = b.startsWith('_');
+        if (aIsUnder && !bIsUnder) return -1;
+        if (!aIsUnder && bIsUnder) return 1;
+        return a.localeCompare(b);
+    });
+
+    for (const k of keys) {
+        if (k === '__type__') continue;
+        const val = values[k];
+        try {
+            const desc = _findPropertyDescriptor(instance, k);
+            if (desc && desc.get && !desc.set) {
+                continue;
+            }
+
+            if (val && typeof val === 'object') {
+                if (val.__type__) {
+                    const subCtor = cc.js.getClassByName(val.__type__);
+                    if (subCtor) {
+                        const isAsset = cc.js.isChildClassOf(subCtor, cc.Asset);
+                        if (isAsset) {
+                            continue;
+                        }
+                        if (!instance[k] || !(instance[k] instanceof subCtor)) {
+                            instance[k] = new subCtor();
+                        }
+                        const subPrev = prevValues && prevValues[k] ? (prevValues[k].__value__ || prevValues[k]) : null;
+                        _populateInstance(instance[k], val.__value__ || val, subPrev, skipSetters);
+                        continue;
+                    }
+                } else if (Array.isArray(val)) {
+                    const arr = [];
+                    const prevArr = prevValues && Array.isArray(prevValues[k]) ? prevValues[k] : null;
+                    for (let i = 0; i < val.length; i++) {
+                        const itemVal = val[i];
+                        if (itemVal && typeof itemVal === 'object' && itemVal.__type__) {
+                            const itemCtor = cc.js.getClassByName(itemVal.__type__);
+                            if (itemCtor) {
+                                const itemInst = new itemCtor();
+                                const itemPrev = prevArr && prevArr[i] ? (prevArr[i].__value__ || prevArr[i]) : null;
+                                _populateInstance(itemInst, itemVal.__value__ || itemVal, itemPrev, skipSetters);
+                                arr.push(itemInst);
+                                continue;
+                            }
+                        }
+                        arr.push(itemVal);
+                    }
+                    instance[k] = arr;
+                    continue;
+                }
+            }
+
+            if (desc && desc.set) {
+                if (skipSetters) {
+                    const backingKey = '_' + k;
+                    if (backingKey in instance || instance.hasOwnProperty(backingKey)) {
+                        try { instance[backingKey] = val; } catch (e) {}
+                    }
+                    continue;
+                }
+
+                if (prevValues && k in prevValues && _isValEqual(prevValues[k], val)) {
+                    const backingKey = '_' + k;
+                    if (backingKey in instance || instance.hasOwnProperty(backingKey)) {
+                        try { instance[backingKey] = val; } catch (e) {}
+                    }
+                    continue;
+                }
+            }
+
+            instance[k] = val;
+        } catch (e) {}
+    }
+}
+
+function _getComponentDumpByName(className, currentValues) {
     const ctor = cc.js.getClassByName(className);
     if (!ctor) {
         console.error(`[pTS-Core] Class not found: ${className}`);
@@ -173,6 +521,17 @@ function _getComponentDumpByName(className) {
     _toDumperData(ctor);
 
     const instance = new ctor();
+    if (currentValues && typeof currentValues === 'object') {
+        _populateInstance(instance, currentValues);
+    }
+    try {
+        if (typeof instance.onFocusInEditor === 'function') {
+            instance.onFocusInEditor();
+        }
+    } catch (err) {
+        console.error(`[pTS-Core] Error in onFocusInEditor for ${className}:`, err);
+    }
+
     const n = {
         type: className,
         default: null,
@@ -191,6 +550,19 @@ function _getComponentDumpByName(className) {
     try {
         const dump = cce.Dump.encode.encodeObject(instance, n, null, className, false);
 
+        if (dump && dump.value) {
+            _applyInstanceAttrsToDump(instance, dump, className);
+            _translateDump(dump.value, '');
+
+            const gettersInfo = _getGettersOfClass(ctor);
+            dump.__getters__ = gettersInfo;
+            for (const g in gettersInfo) {
+                if (dump.value[g] && gettersInfo[g].readonly) {
+                    dump.value[g].readonly = true;
+                }
+            }
+        }
+
         if (instance instanceof cc.Object && typeof instance.destroy === 'function' && (instance['node'] instanceof cc.Node)) {
             instance.destroy();
         }
@@ -204,6 +576,179 @@ function _getComponentDumpByName(className) {
             Object.setPrototypeOf(ctor.prototype, originalProto);
         }
     }
+}
+
+let _lastEvaluatedValues = {};
+
+function _evaluatePtsLive(className, currentValues) {
+    const ctor = cc.js.getClassByName(className);
+    if (!ctor) {
+        return { error: `Class ${className} not found` };
+    }
+
+    const instance = new ctor();
+    if (currentValues && typeof currentValues === 'object') {
+        _populateInstance(instance, currentValues, null, true);
+    }
+    _lastEvaluatedValues[className] = JSON.parse(JSON.stringify(currentValues || {}));
+
+    try {
+        if (typeof instance.onFocusInEditor === 'function') {
+            instance.onFocusInEditor();
+        }
+    } catch (err) {
+        console.error(`[pTS-Core] Error in onFocusInEditor for ${className}:`, err);
+    }
+
+    const gettersInfo = _getGettersOfClass(ctor);
+    const gettersValues = {};
+    for (const p in gettersInfo) {
+        try {
+            gettersValues[p] = instance[p];
+        } catch (e) {
+            console.warn(`[pTS-Core] Error evaluating getter ${p}:`, e);
+        }
+    }
+
+    const attrs = cc.Class.Attr.getClassAttrs(ctor);
+    const visibility = {};
+    const props = ctor.__props__ || [];
+    for (const p of props) {
+        const visKey = `${p}${cc.Class.Attr.DELIMETER}visible`;
+        const visFn = attrs[visKey];
+        if (typeof visFn === 'function') {
+            try {
+                visibility[p] = !!visFn.call(instance);
+            } catch (e) {
+                visibility[p] = true;
+            }
+        } else if (typeof visFn === 'boolean') {
+            visibility[p] = visFn;
+        } else {
+            visibility[p] = true;
+        }
+    }
+
+    const del = cc.Class.Attr.DELIMETER || '$_$';
+    const enumLists = {};
+    if (instance.__instance_attrs__) {
+        for (const [attrKey, attrVal] of Object.entries(instance.__instance_attrs__)) {
+            const [p, a] = attrKey.split(del);
+            if (a === 'enumList') {
+                enumLists[p] = attrVal;
+            }
+        }
+    }
+
+    const arrayVisibility = {};
+    const arrayGetters = {};
+    const arrayEnumLists = {};
+    if (currentValues && typeof currentValues === 'object') {
+        for (const k in currentValues) {
+            const arr = currentValues[k];
+            if (Array.isArray(arr) && arr.length > 0) {
+                const sample = arr[0];
+                const itemTypeName = sample && typeof sample === 'object' ? sample.__type__ : null;
+                const itemCtor = itemTypeName ? cc.js.getClassByName(itemTypeName) : null;
+                if (itemCtor) {
+                    const itemAttrs = cc.Class.Attr.getClassAttrs(itemCtor);
+                    const itemGettersInfo = _getGettersOfClass(itemCtor);
+                    const itemProps = itemCtor.__props__ || [];
+
+                    arrayVisibility[k] = [];
+                    arrayGetters[k] = [];
+                    arrayEnumLists[k] = [];
+
+                    for (let i = 0; i < arr.length; i++) {
+                        const rawItem = arr[i];
+                        const itemInst = new itemCtor();
+                        _populateInstance(itemInst, rawItem?.__value__ || rawItem, null, true);
+                        try {
+                            if (typeof itemInst.onFocusInEditor === 'function') {
+                                itemInst.onFocusInEditor();
+                            }
+                        } catch (err) {}
+
+                        const itemVis = {};
+                        for (const ip of itemProps) {
+                            const ivKey = `${ip}${cc.Class.Attr.DELIMETER}visible`;
+                            const ivFn = itemAttrs[ivKey];
+                            if (typeof ivFn === 'function') {
+                                try {
+                                    itemVis[ip] = !!ivFn.call(itemInst);
+                                } catch (e) {
+                                    itemVis[ip] = true;
+                                }
+                            } else if (typeof ivFn === 'boolean') {
+                                itemVis[ip] = ivFn;
+                            } else {
+                                itemVis[ip] = true;
+                            }
+                        }
+                        arrayVisibility[k].push(itemVis);
+
+                        const itemGetVal = {};
+                        for (const gp in itemGettersInfo) {
+                            try {
+                                itemGetVal[gp] = itemInst[gp];
+                            } catch (e) {}
+                        }
+                        arrayGetters[k].push(itemGetVal);
+
+                        const itemEnumList = {};
+                        if (itemInst.__instance_attrs__) {
+                            for (const [attrKey, attrVal] of Object.entries(itemInst.__instance_attrs__)) {
+                                const [p, a] = attrKey.split(del);
+                                if (a === 'enumList') {
+                                    itemEnumList[p] = attrVal;
+                                }
+                            }
+                        }
+                        arrayEnumLists[k].push(itemEnumList);
+                    }
+                }
+            }
+        }
+    }
+
+    const cachedEnumLists = _cachedInstanceAttrs[className] || {};
+    const cachedArrayEnumLists = _cachedArrayInstanceAttrs[className] || {};
+
+    const finalArrayEnumLists = {};
+    if (cachedArrayEnumLists) {
+        for (const k in cachedArrayEnumLists) {
+            finalArrayEnumLists[k] = [...cachedArrayEnumLists[k]];
+        }
+    }
+    for (const k in arrayEnumLists) {
+        if (!finalArrayEnumLists[k]) {
+            finalArrayEnumLists[k] = arrayEnumLists[k];
+        } else {
+            const freshArr = arrayEnumLists[k];
+            for (let i = 0; i < freshArr.length; i++) {
+                if (freshArr[i] && Object.keys(freshArr[i]).length > 0) {
+                    finalArrayEnumLists[k][i] = Object.assign({}, finalArrayEnumLists[k][i] || {}, freshArr[i]);
+                }
+            }
+        }
+    }
+
+    const finalEnumLists = Object.assign({}, cachedEnumLists);
+    for (const [k, v] of Object.entries(enumLists)) {
+        if (v && Object.keys(v).length > 0) {
+            finalEnumLists[k] = v;
+        }
+    }
+
+    return {
+        getters: gettersValues,
+        gettersInfo: gettersInfo,
+        visibility: visibility,
+        arrayVisibility: arrayVisibility,
+        arrayGetters: arrayGetters,
+        enumLists: finalEnumLists,
+        arrayEnumLists: finalArrayEnumLists
+    };
 }
 
 // ─── Helpers: Live Runtime Inspector Sync ───
@@ -314,6 +859,13 @@ function getLiveInstance(uuid, className) {
 }
 
 function _dumpLiveInstance(instance, className) {
+    if (instance && typeof instance.onFocusInEditor === 'function') {
+        try {
+            instance.onFocusInEditor();
+        } catch (err) {
+            console.error(`[pTS-Core] Error in onFocusInEditor for live instance:`, err);
+        }
+    }
     const ctor = instance.constructor || (className ? cc.js.getClassByName(className) : null);
     if (!ctor) return null;
     _toDumperData(ctor);
@@ -336,6 +888,10 @@ function _dumpLiveInstance(instance, className) {
 
     try {
         const dump = cce.Dump.encode.encodeObject(instance, n, null, typeName, false);
+        _applyInstanceAttrsToDump(instance, dump, typeName);
+        if (dump && dump.value) {
+            _translateDump(dump.value, '');
+        }
         return dump;
     } catch (err) {
         console.error(`[pTS-Core] Failed to dump live instance ${typeName}:`, err);
@@ -613,8 +1169,111 @@ exports.methods = {
         return _getCCPropsInfo(_val);
     },
 
-    dump(what) {
-        return _getComponentDumpByName(what);
+    dump(what, currentValues) {
+        return _getComponentDumpByName(what, currentValues);
+    },
+
+    evaluate_pts_live(className, currentValues) {
+        return _evaluatePtsLive(className, currentValues);
+    },
+
+    on_pts_property_changed(className, currentValues, propPath, newValue) {
+        const ctor = cc.js.getClassByName(className);
+        if (!ctor) {
+            return { success: false, error: `Class ${className} not found` };
+        }
+
+        // 1. Instantiate and populate initial state (skipping setters)
+        const instance = new ctor();
+        if (currentValues && typeof currentValues === 'object') {
+            _populateInstance(instance, currentValues, null, true);
+        }
+
+        // 2. Navigate along propPath and apply the property change (calling the setter!)
+        const parts = String(propPath).split('.');
+        let target = instance;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i];
+            if (target && target[part] !== undefined) {
+                target = target[part];
+            }
+        }
+        const propName = parts[parts.length - 1];
+
+        try {
+            if (target) {
+                target[propName] = newValue;
+            }
+        } catch (setErr) {
+            console.error(`[pTS-Core] Error applying setter for ${propPath}:`, setErr);
+        }
+
+        // 3. Ensure backing field '_' + propName is synced if present
+        const backingKey = '_' + propName;
+        if (target && (backingKey in target || target.hasOwnProperty(backingKey))) {
+            try {
+                if (target[backingKey] === undefined || target[backingKey] === null || target[backingKey] === '') {
+                    target[backingKey] = newValue;
+                }
+            } catch (e) {}
+        }
+
+        // 4. Serialize the updated instance (including backing fields like _bundle)
+        const updatedValues = _serializeInstance(instance);
+
+        // 5. Generate updated dump
+        const updatedDump = _dumpLiveInstance(instance, className);
+
+        // 6. Extract dynamic instance attributes (enumLists)
+        const enumLists = _extractInstanceAttrs(instance);
+        const arrayEnumLists = _extractArrayInstanceAttrs(instance);
+        _cachedInstanceAttrs[className] = enumLists;
+        _cachedArrayInstanceAttrs[className] = arrayEnumLists;
+
+        // 7. Extract dynamic getters & visibility
+        const evalResult = _evaluatePtsLive(className, updatedValues);
+
+        return {
+            success: true,
+            values: updatedValues,
+            dump: updatedDump,
+            enumLists: Object.assign({}, evalResult.enumLists || {}, enumLists),
+            arrayEnumLists: Object.assign({}, evalResult.arrayEnumLists || {}, arrayEnumLists),
+            visibility: evalResult.visibility,
+            arrayVisibility: evalResult.arrayVisibility,
+            getters: evalResult.getters,
+            arrayGetters: evalResult.arrayGetters
+        };
+    },
+
+    on_pts_focus(className, currentValues, uuid) {
+        let instance = null;
+        if (uuid) {
+            instance = getLiveInstance(uuid, className);
+        }
+        if (!instance && className) {
+            const ctor = cc.js.getClassByName(className);
+            if (ctor) {
+                instance = new ctor();
+                if (currentValues && typeof currentValues === 'object') {
+                    _populateInstance(instance, currentValues);
+                }
+            }
+        }
+        if (instance && typeof instance.onFocusInEditor === 'function') {
+            try {
+                instance.onFocusInEditor();
+                return {
+                    success: true,
+                    focused: true,
+                    values: className ? _extractLiveValues(instance, className) : null
+                };
+            } catch (err) {
+                console.error(`[pTS-Core] Error executing onFocusInEditor:`, err);
+                return { success: false, error: String(err) };
+            }
+        }
+        return { success: true, focused: false };
     },
 
     is_preview_mode() {
