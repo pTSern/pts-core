@@ -3,14 +3,34 @@ import { BUILD } from "cc/env";
 import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
 import { IS_TEST } from "./utils/pConst";
+import { pArray } from "./utils";
 
 const { ccclass } = _decorator;
 
+
 @ccclass("pTSAsset")
-export class pTSAsset<_TInterfaces extends Record<string, any> = Record<string, pFlex.TFunc>> extends Asset {
+export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
     protected _onLoad?(): void;
     protected _onReleased?(): void;
     protected _isLoaded: boolean = false;
+
+    static add(assets: pFlex.TArray<pTSAsset>, func: pFlex.TArray<pFlex.THandler>, ...funcs: pFlex.THandler[]) {
+        assets = pArray.flatter(assets);
+        funcs = pArray.flat(func, funcs);
+
+        for(const _asset of assets) {
+            _asset._driver.on('any', ...funcs);
+        }
+    }
+
+    static remove(assets: pFlex.TArray<pTSAsset>, funcs: pFlex.TArray<pFlex.THandler>) {
+        assets = pArray.flatter(assets);
+        funcs = pArray.flatter(funcs);
+
+        for(const _asset of assets) {
+            _asset._driver.off('any', ...funcs);
+        }
+    }
 
     protected hydrate(depsPromise?: Promise<any>): void {
         if (this._isLoaded) return;
