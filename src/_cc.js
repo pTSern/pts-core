@@ -274,8 +274,65 @@ function _applyInstanceAttrsToDump(instance, dump, className = null) {
         }
     }
 
+    for (const propName of Object.keys(dump.value)) {
+        const itemDump = dump.value[propName];
+        if (!itemDump) continue;
+        const valInst = instance[propName];
+        if (valInst && !Array.isArray(valInst)) {
+            const u = valInst._uuid || valInst.uuid || (valInst.__value__ && (valInst.__value__.uuid || valInst.__value__._uuid));
+            if (u) {
+                const isAsset = itemDump.type === 'cc.Asset' || (Array.isArray(itemDump.extends) && itemDump.extends.includes('cc.Asset')) || (itemDump.type && (itemDump.type.startsWith('pTSAsset') || itemDump.type.includes('Asset')));
+                if (isAsset) {
+                    itemDump.value = { uuid: u };
+                }
+            }
+        }
+    }
+
     if (className) {
         _cachedInstanceAttrs[className] = _extractInstanceAttrs(instance);
+    }
+}
+
+function _recoverUnknownDumpTypes(instance, dump, className, currentValues) {
+    if (!dump || !dump.value) return;
+    const ctor = (className ? cc.js.getClassByName(className) : null) || instance?.constructor;
+    const attrs = ctor ? cc.Class.Attr.getClassAttrs(ctor) : {};
+    const del = cc.Class.Attr.DELIMETER || '$_$';
+
+    for (const p of Object.keys(dump.value)) {
+        const item = dump.value[p];
+        if (!item) continue;
+
+        if (item.type === 'Unknown' || !item.type) {
+            // 1. Try CCClass reflection
+            let targetCtor = attrs[`${p}${del}ctor`] || attrs[`${p}${del}type`];
+            let typeName = '';
+            if (targetCtor) {
+                typeName = cc.js.getClassName(targetCtor) || targetCtor.name || (typeof targetCtor === 'string' ? targetCtor : '');
+            }
+            // 2. Try currentValues[p] __type__
+            if (!typeName && currentValues && currentValues[p] && currentValues[p].__type__) {
+                typeName = currentValues[p].__type__;
+                targetCtor = cc.js.getClassByName(typeName);
+            }
+            // 3. Check if instance has __type__
+            if (!typeName && instance && instance[p] && instance[p].__type__) {
+                typeName = instance[p].__type__;
+                targetCtor = cc.js.getClassByName(typeName);
+            }
+
+            if (typeName) {
+                item.type = typeName;
+                const isAsset = targetCtor ? (cc.js.isChildClassOf(targetCtor, cc.Asset) || targetCtor === cc.Asset) : (typeName.startsWith('pTSAsset') || typeName.includes('Asset'));
+                if (isAsset) {
+                    item.extends = ['cc.Asset', 'pTSAsset', typeName];
+                    const uuid = (currentValues?.[p]?.__value__?.uuid || currentValues?.[p]?.uuid || instance?.[p]?._uuid || instance?.[p]?.uuid || '');
+                    item.value = { uuid };
+                }
+                console.log(`[pTS-Core] Recovered Unknown dump type for ${className}.${p} -> ${typeName}`);
+            }
+        }
     }
 }
 
@@ -447,6 +504,12 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
                     if (subCtor) {
                         const isAsset = cc.js.isChildClassOf(subCtor, cc.Asset);
                         if (isAsset) {
+                            const uuid = val.__value__?.uuid || val.uuid || val._uuid;
+                            const asset = (uuid && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(uuid) : null;
+                            instance[k] = asset || (uuid ? { _uuid: uuid, uuid, __type__: cc.js.getClassName(subCtor) } : null);
+                            if (uuid && !asset && cc.assetManager && cc.assetManager.loadAny) {
+                                try { cc.assetManager.loadAny({ uuid }, () => {}); } catch (e) {}
+                            }
                             continue;
                         }
                         if (!instance[k] || !(instance[k] instanceof subCtor)) {
@@ -466,9 +529,12 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
                                 const itemCtor = cc.js.getClassByName(itemVal.__type__);
                                 if (itemCtor) {
                                     if (cc.js.isChildClassOf(itemCtor, cc.Asset)) {
-                                        const uuid = itemVal.__value__?.uuid || itemVal.uuid;
+                                        const uuid = itemVal.__value__?.uuid || itemVal.uuid || itemVal._uuid;
                                         const asset = (uuid && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(uuid) : null;
-                                        arr.push(asset);
+                                        arr.push(asset || (uuid ? { _uuid: uuid, uuid, __type__: cc.js.getClassName(itemCtor) } : null));
+                                        if (uuid && !asset && cc.assetManager && cc.assetManager.loadAny) {
+                                            try { cc.assetManager.loadAny({ uuid }, () => {}); } catch (e) {}
+                                        }
                                         continue;
                                     }
                                     const itemInst = new itemCtor();
@@ -478,10 +544,13 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
                                     continue;
                                 }
                             }
-                            if (itemVal.uuid || (itemVal.__value__ && itemVal.__value__.uuid)) {
-                                const uuid = itemVal.uuid || itemVal.__value__.uuid;
+                            if (itemVal.uuid || itemVal._uuid || (itemVal.__value__ && (itemVal.__value__.uuid || itemVal.__value__._uuid))) {
+                                const uuid = itemVal._uuid || itemVal.uuid || itemVal.__value__?._uuid || itemVal.__value__?.uuid;
                                 const asset = (uuid && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(uuid) : null;
-                                arr.push(asset);
+                                arr.push(asset || (uuid ? { _uuid: uuid, uuid } : null));
+                                if (uuid && !asset && cc.assetManager && cc.assetManager.loadAny) {
+                                    try { cc.assetManager.loadAny({ uuid }, () => {}); } catch (e) {}
+                                }
                                 continue;
                             }
                         }
@@ -550,11 +619,49 @@ function _getComponentDumpByName(className, currentValues) {
         Object.setPrototypeOf(ctor.prototype, cc.Object.prototype);
     }
 
+    // Stash dummy asset objects ({ _uuid, uuid }) so cce.Dump.encode doesn't produce 'Unknown'
+    const stashedAssets = {};
+    for (const k of Object.keys(instance)) {
+        const v = instance[k];
+        if (v && typeof v === 'object' && !(v instanceof cc.Object) && (v._uuid || v.uuid)) {
+            stashedAssets[k] = v;
+            instance[k] = null;
+        } else if (Array.isArray(v)) {
+            for (let i = 0; i < v.length; i++) {
+                const item = v[i];
+                if (item && typeof item === 'object' && !(item instanceof cc.Object) && (item._uuid || item.uuid)) {
+                    stashedAssets[`${k}.${i}`] = item;
+                    v[i] = null;
+                }
+            }
+        }
+    }
+
     try {
         const dump = cce.Dump.encode.encodeObject(instance, n, null, className, false);
 
+        // Restore stashed dummy assets
+        for (const [pathStr, item] of Object.entries(stashedAssets)) {
+            if (pathStr.includes('.')) {
+                const [k, idxStr] = pathStr.split('.');
+                const idx = Number(idxStr);
+                if (instance[k]) instance[k][idx] = item;
+                const u = item._uuid || item.uuid;
+                if (dump && dump.value && dump.value[k] && Array.isArray(dump.value[k].value) && dump.value[k].value[idx]) {
+                    dump.value[k].value[idx].value = { uuid: u };
+                }
+            } else {
+                instance[pathStr] = item;
+                const u = item._uuid || item.uuid;
+                if (dump && dump.value && dump.value[pathStr]) {
+                    dump.value[pathStr].value = { uuid: u };
+                }
+            }
+        }
+
         if (dump && dump.value) {
             _applyInstanceAttrsToDump(instance, dump, className);
+            _recoverUnknownDumpTypes(instance, dump, className, currentValues);
             _translateDump(dump.value, '');
 
             const gettersInfo = _getGettersOfClass(ctor);
@@ -850,10 +957,49 @@ function _dumpLiveInstance(instance, className) {
         Object.setPrototypeOf(ctor.prototype, cc.Object.prototype);
     }
 
+    // Stash dummy asset objects ({ _uuid, uuid }) so cce.Dump.encode doesn't produce 'Unknown'
+    const stashedAssets = {};
+    for (const k of Object.keys(instance)) {
+        const v = instance[k];
+        if (v && typeof v === 'object' && !(v instanceof cc.Object) && (v._uuid || v.uuid)) {
+            stashedAssets[k] = v;
+            instance[k] = null;
+        } else if (Array.isArray(v)) {
+            for (let i = 0; i < v.length; i++) {
+                const item = v[i];
+                if (item && typeof item === 'object' && !(item instanceof cc.Object) && (item._uuid || item.uuid)) {
+                    stashedAssets[`${k}.${i}`] = item;
+                    v[i] = null;
+                }
+            }
+        }
+    }
+
     try {
         const dump = cce.Dump.encode.encodeObject(instance, n, null, typeName, false);
-        _applyInstanceAttrsToDump(instance, dump, typeName);
+
+        // Restore stashed dummy assets
+        for (const [pathStr, item] of Object.entries(stashedAssets)) {
+            if (pathStr.includes('.')) {
+                const [k, idxStr] = pathStr.split('.');
+                const idx = Number(idxStr);
+                if (instance[k]) instance[k][idx] = item;
+                const u = item._uuid || item.uuid;
+                if (dump && dump.value && dump.value[k] && Array.isArray(dump.value[k].value) && dump.value[k].value[idx]) {
+                    dump.value[k].value[idx].value = { uuid: u };
+                }
+            } else {
+                instance[pathStr] = item;
+                const u = item._uuid || item.uuid;
+                if (dump && dump.value && dump.value[pathStr]) {
+                    dump.value[pathStr].value = { uuid: u };
+                }
+            }
+        }
+
         if (dump && dump.value) {
+            _applyInstanceAttrsToDump(instance, dump, typeName);
+            _recoverUnknownDumpTypes(instance, dump, typeName, instance);
             _translateDump(dump.value, '');
         }
         return dump;
@@ -1169,11 +1315,18 @@ exports.methods = {
                 if (Array.isArray(target) && !isNaN(Number(propName))) {
                     const idx = Number(propName);
                     let valToAssign = newValue;
-                    if (typeof newValue === 'string' && newValue.includes('-')) {
-                        valToAssign = (cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(newValue) : null;
-                    } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue.__value__?.uuid)) {
-                        const u = newValue.uuid || newValue.__value__?.uuid;
-                        valToAssign = (u && cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(u) : null;
+                    let u = '';
+                    if (typeof newValue === 'string' && (newValue.includes('-') || newValue.includes('@'))) {
+                        u = newValue;
+                    } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue._uuid || newValue.__value__?.uuid || newValue.__value__?._uuid)) {
+                        u = newValue._uuid || newValue.uuid || newValue.__value__?._uuid || newValue.__value__?.uuid;
+                    }
+                    if (u) {
+                        const asset = (cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(u) : null;
+                        valToAssign = asset || { _uuid: u, uuid: u };
+                        if (!asset && cc.assetManager && cc.assetManager.loadAny) {
+                            try { cc.assetManager.loadAny({ uuid: u }, () => {}); } catch (e) {}
+                        }
                     }
                     target[idx] = valToAssign;
                 } else if (parts.length === 1 && Array.isArray(newValue)) {
