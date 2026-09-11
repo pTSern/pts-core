@@ -16,7 +16,7 @@ const _$Keys = pConst?.KEYS?.SINGLETON || {
     INSTANCE: Symbol('__pTS_instance__'),
     GETTER: Symbol('__pTS_get_instance__'),
     OPTION: Symbol('__pTS_option__'),
-    IMPL: Symbol('__pTS_implements__'),
+    IMPL: Symbol.for('__pTS_implements__'),
 };
 const _$Waiter = new Map<Function, { promise: Promise<any>, resolve: pFlex.TFunc, resolved: boolean }>();
 
@@ -175,12 +175,17 @@ function _logger(who: any, name: string) {
 
 type _TMode = 'EDITOR_NOT_IN_PREVIEW' | "EDITOR" | "EDITOR_ONLY_IN_PREVIEW" | "RUNTIME"
 export function editor_ccclass(name: string, mode: _TMode = "EDITOR_ONLY_IN_PREVIEW", logger: boolean = true) {
-    const should = _$hould(mode)
     return (target: any) => {
         logger && _logger(target, name);
-        return should ? _decorator.ccclass(name)(target) : void 0
+        if (target) {
+            target.__is_editor_class__ = true;
+            target.__editor_class_mode__ = mode;
+        }
+        return (EDITOR || _$hould(mode)) ? _decorator.ccclass(name)(target) : void 0;
     };
 }
+
+export const editor_class = editor_ccclass;
 
 export function logcat(who: any, method: 'log' | 'warn' | 'error') {
     const _target = who['_$L'] || console;
@@ -202,17 +207,56 @@ function _$hould(mode: _TMode) {
 }
 
 export function editor_property(type?: any, opt?: { name?: string, multiline?: boolean, override?: boolean, kill?: boolean, writable?: boolean }, mode: _TMode = 'EDITOR_ONLY_IN_PREVIEW') {
-    const should = _$hould(mode);
-
     return (target: any, key: string, descriptor?: PropertyDescriptor) => {
-        if (!EDITOR) { if (opt?.kill && descriptor?.get) descriptor.get = () => null; return; }
-        if (!should) return;
-        const options: any = { group: { name: "_Debugger", id: "0" }, readonly: !opt?.writable, visible: true };
+        // 1. Always record metadata on constructor and prototype for inspector runtime reflection
+        const ctor = typeof target === 'function' ? target : target?.constructor;
+        if (ctor) {
+            if (!Object.prototype.hasOwnProperty.call(ctor, '__editor_props__')) {
+                ctor.__editor_props__ = Object.assign({}, ctor.__editor_props__ || {});
+            }
+            ctor.__editor_props__[key] = {
+                key,
+                targetClass: ctor.name || '',
+                name: opt?.name || key,
+                type: type,
+                readonly: !opt?.writable,
+                multiline: !!opt?.multiline,
+                override: !!opt?.override,
+                isGetter: !!descriptor?.get,
+                mode: mode,
+                group: { name: "_Debugger", id: "0" }
+            };
+            if (target && target !== ctor) {
+                if (!Object.prototype.hasOwnProperty.call(target, '__editor_props__')) {
+                    target.__editor_props__ = Object.assign({}, target.__editor_props__ || {});
+                }
+                target.__editor_props__[key] = ctor.__editor_props__[key];
+            }
+        }
+
+        if (!EDITOR) {
+            if (opt?.kill && descriptor?.get) descriptor.get = () => null;
+            return;
+        }
+
+        // 2. In EDITOR, register with CCClass @property using dynamic preview visibility
+        const options: any = {
+            group: { name: "_Debugger", id: "0" },
+            readonly: !opt?.writable,
+            visible: () => pConst?.EDITOR_ONLY_IN_PREVIEW ?? false
+        };
         if (type) options.type = type;
         if (opt?.name) options.displayName = opt.name;
         if (opt?.multiline) options.multiline = true;
         if (opt?.override) options.override = true;
-        return descriptor ? _decorator.property(options)(target, key, descriptor) : _decorator.property(options)(target, key);
+
+        try {
+            return descriptor
+                ? _decorator.property(options)(target, key, descriptor)
+                : _decorator.property(options)(target, key);
+        } catch (e) {
+            // Silently catch if decorator applied outside ccclass
+        }
     };
 }
 
@@ -300,11 +344,239 @@ export function singleton(opt?: { initer?: string, destroyer?: string, wake?: 'I
     };
 }
 
-export function imps(...names: string[]) {
-    return (constructor: pFlex.TCtor) => {
-        constructor[_$Keys.IMPL] ||= {};
-        names.forEach(n => constructor[_$Keys.IMPL][n] = true);
+declare const Editor: any;
+
+let _hasHookedIsChildClassOf = false;
+export function hookJsIsChildClassOf(): void {
+    if (_hasHookedIsChildClassOf) return;
+    try {
+        if (typeof js !== 'undefined' && typeof js.isChildClassOf === 'function') {
+            const origIsChild = js.isChildClassOf;
+            if (!(origIsChild as any).__pts_hooked__) {
+                const hooked = function(subClass: any, superClass: any) {
+                    if (origIsChild(subClass, superClass)) return true;
+                    if (typeof subClass === 'function' && typeof superClass === 'function') {
+                        return isImplementedFrom(superClass, subClass);
+                    }
+                    return false;
+                };
+                (hooked as any).__pts_hooked__ = true;
+                js.isChildClassOf = hooked;
+                _hasHookedIsChildClassOf = true;
+            }
+        }
+    } catch {}
+}
+
+export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Function, targetClass: pFlex.TCtorFlex<any, any> | Function): boolean {
+    if (typeof superClass !== 'function' || typeof targetClass !== 'function') return false;
+    if (targetClass === superClass) return true;
+    try {
+        if (targetClass.prototype instanceof superClass) return true;
+    } catch {}
+
+    const superName = js.getClassName(superClass as any) || (superClass as any).name;
+    let cur: any = targetClass;
+    const visited = new Set<any>();
+
+    while (cur && cur !== Object && cur !== Function && !visited.has(cur)) {
+        visited.add(cur);
+        const impls: any = cur[_$Keys.IMPL] || cur['__pTS_implements__'];
+        if (impls) {
+            if (impls instanceof Set) {
+                if (impls.has(superClass) || (superName && impls.has(superName))) return true;
+                for (const contract of impls) {
+                    if (typeof contract === 'function' && isImplementedFrom(superClass, contract)) {
+                        return true;
+                    }
+                }
+            } else if (Array.isArray(impls)) {
+                if (impls.includes(superClass) || (superName && impls.includes(superName))) return true;
+                for (const contract of impls) {
+                    if (typeof contract === 'function' && isImplementedFrom(superClass, contract)) {
+                        return true;
+                    }
+                }
+            } else if (typeof impls === 'object') {
+                if (impls[superName] || (superClass in impls)) return true;
+                for (const key of Object.keys(impls)) {
+                    const c = js.getClassByName(key);
+                    if (c && isImplementedFrom(superClass, c)) return true;
+                }
+            }
+        }
+        cur = Object.getPrototypeOf(cur);
+    }
+    return false;
+}
+
+export function hookHasInstance(contract: any): void {
+    if (typeof contract !== 'function') return;
+    if ((contract[Symbol.hasInstance] as any)?.__pts_custom__) return;
+
+    const originalHasInstance = contract[Symbol.hasInstance] || Function.prototype[Symbol.hasInstance];
+    const customHasInstance = function(this: any, instance: any) {
+        if (!instance) return false;
+        try {
+            if (originalHasInstance.call(this, instance)) return true;
+        } catch {}
+        const ctor = typeof instance === 'function' ? instance : instance?.constructor;
+        if (ctor && isImplementedFrom(this, ctor)) return true;
+        return false;
     };
+    (customHasInstance as any).__pts_custom__ = true;
+    try {
+        Object.defineProperty(contract, Symbol.hasInstance, {
+            value: customHasInstance,
+            configurable: true,
+            writable: true
+        });
+    } catch {}
+}
+
+function isPtsAssetOrComponent(cls: any): boolean {
+    if (!cls || typeof cls !== 'function') return false;
+    if (cls === Component || cls.prototype instanceof Component) return true;
+    let cur = cls;
+    while (cur && cur !== Object && cur !== Function) {
+        const name = cur.name || js.getClassName(cur);
+        if (name === 'pTSAsset' || name === 'pTSAsset_Data' || name === 'Component') return true;
+        cur = Object.getPrototypeOf(cur);
+    }
+    return false;
+}
+
+function validateContractImplementation(target: any, contract: any): string[] {
+    const missing: string[] = [];
+    if (!target || !contract) return missing;
+
+    // 1. Check prototype methods and accessors (excluding constructor)
+    const proto = contract.prototype;
+    if (proto) {
+        const descs = Object.getOwnPropertyDescriptors(proto);
+        for (const [key, desc] of Object.entries(descs)) {
+            if (key === 'constructor') continue;
+            const targetDesc = Object.getOwnPropertyDescriptor(target.prototype, key);
+            if (!targetDesc && !(key in target.prototype)) {
+                missing.push(key);
+            }
+        }
+    }
+
+    // 2. Check decorated properties / instance fields
+    const contractProps: string[] = [];
+    if (contract.__editor_props__) {
+        contractProps.push(...Object.keys(contract.__editor_props__));
+    }
+    if (Array.isArray(contract.__props__)) {
+        contractProps.push(...contract.__props__);
+    }
+    try {
+        const instProps = actExtractProp(contract);
+        if (Array.isArray(instProps)) {
+            contractProps.push(...instProps);
+        }
+    } catch {}
+
+    for (const prop of contractProps) {
+        if (prop === '__editorExtras__' || prop === '_objFlags' || prop === '_name' || prop === '_callbackTable') continue;
+        const hasOnProto = prop in target.prototype;
+        const hasOnEditorProps = !!target.__editor_props__?.[prop];
+        const hasOnProps = Array.isArray(target.__props__) && target.__props__.includes(prop);
+        let hasOnInstance = false;
+        try {
+            const targetInstProps = actExtractProp(target);
+            hasOnInstance = Array.isArray(targetInstProps) && targetInstProps.includes(prop);
+        } catch {}
+
+        if (!hasOnProto && !hasOnEditorProps && !hasOnProps && !hasOnInstance) {
+            if (!missing.includes(prop)) {
+                missing.push(prop);
+            }
+        }
+    }
+
+    return missing;
+}
+
+export function implement<TContracts extends (pFlex.TCtorFlex<any, any> | pFlex.TCtor<any, any> | string)[]>(
+    ...contracts: TContracts
+) {
+    hookJsIsChildClassOf();
+
+    const flatContracts: any[] = pArray.flatter(contracts);
+
+    for (const contract of flatContracts) {
+        if (typeof contract === 'function') {
+            hookHasInstance(contract);
+        }
+    }
+
+    return function <TTarget extends pFlex.TCtorFlex<any, any> | Function>(target: TTarget): TTarget {
+        if (!target || typeof target !== 'function') return target;
+
+        const targetCtor = target as any;
+        const targetName = targetCtor.name || js.getClassName(targetCtor) || 'UnknownClass';
+
+        // 1. Validation: target class must extend Component or pTSAsset
+        if (!isPtsAssetOrComponent(targetCtor)) {
+            const errMsg = `[@implement] Invalid Target: Class "${targetName}" must extend either pTSAsset or Component! Base classes cannot be instantiated or checked by Cocos Creator properly.`;
+            console.error(errMsg);
+            if ((EDITOR || DEV) && typeof Editor !== 'undefined' && Editor.Dialog && typeof Editor.Dialog.warn === 'function') {
+                try {
+                    Editor.Dialog.warn({ title: '@implement Constraint Error', message: errMsg });
+                } catch {}
+            }
+        }
+
+        // 2. Register implementations on target constructor
+        if (!targetCtor[_$Keys.IMPL]) {
+            targetCtor[_$Keys.IMPL] = new Set<any>();
+        }
+        if (!targetCtor.__pTS_implements__) {
+            targetCtor.__pTS_implements__ = targetCtor[_$Keys.IMPL];
+        }
+
+        for (const contract of flatContracts) {
+            if (!contract) continue;
+            targetCtor[_$Keys.IMPL].add(contract);
+            if (typeof contract === 'string') {
+                const ctor = js.getClassByName(contract);
+                if (ctor) {
+                    targetCtor[_$Keys.IMPL].add(ctor);
+                    hookHasInstance(ctor);
+                }
+            } else if (typeof contract === 'function') {
+                const cName = js.getClassName(contract) || contract.name;
+                if (cName) {
+                    targetCtor[_$Keys.IMPL].add(cName);
+                }
+
+                // 3. Dev / Editor safety verification: verify implemented properties
+                if (EDITOR || DEV) {
+                    const missing = validateContractImplementation(targetCtor, contract);
+                    if (missing.length > 0) {
+                        const warnMsg = `[@implement] Type Check Error: Class "${targetName}" declares @implement(${cName || 'Contract'}), but is missing implementation for: [${missing.join(', ')}].`;
+                        console.error(warnMsg);
+                        if (typeof Editor !== 'undefined' && Editor.Dialog && typeof Editor.Dialog.warn === 'function') {
+                            try {
+                                Editor.Dialog.warn({
+                                    title: '@implement Type Check Error',
+                                    message: `Class "${targetName}" does not implement contract "${cName}".\nMissing properties/methods:\n- ${missing.join('\n- ')}`
+                                });
+                            } catch {}
+                        }
+                    }
+                }
+            }
+        }
+
+        return target;
+    };
+}
+
+export function imps(...contracts: (pFlex.TCtorFlex<any, any> | pFlex.TCtor<any, any> | string)[]) {
+    return implement(...contracts);
 }
 
 export function persistent(opt: { key: string, initer?: string, destroyer?: string }) {
@@ -330,14 +602,14 @@ export function override<_TClass, _TGetSetter>(constructor: pFlex.TCtor<any, _TC
 
 export function isInheritedFrom<_TClass>(superClass: pFlex.TCtor<any, _TClass>, target: pFlex.TArray<pFlex.TCtor<any, any>>, ...rest: pFlex.TCtor<any, any>[]): boolean {
     if (typeof superClass !== 'function') return false;
-    return pArray.flatter(target, ...rest).every(cls => typeof cls === 'function' && (cls === superClass || cls.prototype instanceof superClass));
+    return pArray.flatter(target, ...rest).every(cls => typeof cls === 'function' && (cls === superClass || cls.prototype instanceof superClass || isImplementedFrom(superClass, cls)));
 }
 
 export function isInheritedFromOr<_TClass>(superClass: pFlex.TCtor<any, _TClass>, target: pFlex.TArray<pFlex.TCtor<any, any>>, ...rest: pFlex.TCtor<any, any>[]): boolean {
     if (typeof superClass !== 'function') return false;
 
     for(const cls of pArray.flatter(target, ...rest)) {
-        if(typeof cls === 'function' && (cls === superClass || cls.prototype instanceof superClass)) { return true }
+        if(typeof cls === 'function' && (cls === superClass || cls.prototype instanceof superClass || isImplementedFrom(superClass, cls))) { return true; }
     }
 
     return false;
@@ -346,8 +618,9 @@ export function isInheritedFromOr<_TClass>(superClass: pFlex.TCtor<any, _TClass>
 export function getInheritedClasses<_TClass>(superClass: pFlex.TCtor<any, _TClass>, list: pFlex.TArray<pFlex.TCtor<any, any>>, each?: (cls: pFlex.TCtor<any, _TClass>) => void): pFlex.TCtor<any, _TClass>[] {
     if (typeof superClass !== 'function') return [];
     return pArray.flatter(list).filter((cls): cls is pFlex.TCtor<any, _TClass> => {
-        const isMatch = typeof cls === 'function' && (cls === superClass || cls.prototype instanceof superClass);
+        const isMatch = typeof cls === 'function' && (cls === superClass || cls.prototype instanceof superClass || isImplementedFrom(superClass, cls));
         if (isMatch && each) each(cls as pFlex.TCtor<any, _TClass>);
         return isMatch;
     });
 }
+

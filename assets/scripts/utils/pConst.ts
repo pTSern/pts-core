@@ -88,7 +88,7 @@ export const KEYS = {
         INSTANCE: Symbol('__pTS_instance__'),
         GETTER: Symbol('__pTS_get_instance__'),
         OPTION: Symbol('__pTS_option__'),
-        IMPL: Symbol('__pTS_implements__'),
+        IMPL: Symbol.for('__pTS_implements__'),
     }
 };
 
