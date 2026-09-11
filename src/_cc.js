@@ -363,6 +363,18 @@ function _translateDump(dumpValue, path = '') {
     }
 }
 
+const BASE_ASSET_IGNORED_PROPS = new Set([
+    // cc.Object / cc.Asset engine internals
+    '_name', '_objFlags', '__editorExtras__', '_native', '_nativeAsset', 'name', 'isValid',
+    '_callbackTable', '_nativeUrl', '_file', '_ref', 'loaded', 'rawUrl', '_uuid', 'uuid',
+    // pTSAsset internals
+    '_isLoaded', '_ready', '_resolver', '_driver', '_onLoad', '_onReleased', '_onAwake', 'ready',
+    // Event / callback internals
+    '_eventTargets', '_callback', '_handlers', '__waiters_',
+    // Inspector / UI internals
+    'enabled', '_enabled', 'node'
+]);
+
 function _serializeInstance(instance) {
     if (!instance || typeof instance !== 'object') return instance;
     const ctor = instance.constructor;
@@ -374,12 +386,19 @@ function _serializeInstance(instance) {
 
     // 1. Process CCClass declared properties
     for (const p of props) {
+        if (BASE_ASSET_IGNORED_PROPS.has(p) || p.startsWith('__')) {
+            continue;
+        }
+        if (ctor.__editor_props__ && ctor.__editor_props__[p]) {
+            continue;
+        }
         if (gettersInfo[p] && gettersInfo[p].readonly) {
             continue;
         }
 
         const val = instance[p];
-        if (val === undefined) continue;
+        if (val === undefined || typeof val === 'function') continue;
+        if (val instanceof Promise || val instanceof Map || val instanceof Set) continue;
 
         if (Array.isArray(val)) {
             result[p] = val.map(item => {
@@ -447,7 +466,19 @@ function _serializeInstance(instance) {
     // 2. Include backing fields starting with '_' that might not be in __props__
     for (const k of Object.keys(instance)) {
         if (k.startsWith('_') && !(k in result) && !k.startsWith('__')) {
+            if (BASE_ASSET_IGNORED_PROPS.has(k)) {
+                continue;
+            }
+            const publicPropName = k.slice(1);
+            const hasPublicProp = (ctor.__props__ && ctor.__props__.includes(publicPropName)) || (publicPropName in instance);
+            if (!hasPublicProp) {
+                continue;
+            }
+
             const v = instance[k];
+            if (v === undefined || typeof v === 'function') continue;
+            if (v instanceof Promise || v instanceof Map || v instanceof Set) continue;
+
             if (v && typeof v === 'object' && v.constructor && v.constructor !== Object && !Array.isArray(v)) {
                 const vCtor = v.constructor;
                 const vTypeName = cc.js.getClassName(vCtor) || vCtor.name;
@@ -490,7 +521,7 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
     });
 
     for (const k of keys) {
-        if (k === '__type__') continue;
+        if (k === '__type__' || k.startsWith('__') || BASE_ASSET_IGNORED_PROPS.has(k)) continue;
         const val = values[k];
         try {
             const desc = _findPropertyDescriptor(instance, k);
@@ -557,6 +588,10 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
                         arr.push(itemVal);
                     }
                     instance[k] = arr;
+                    continue;
+                } else if (!Array.isArray(val) && instance[k] && typeof instance[k] === 'object' && !Array.isArray(instance[k]) && instance[k].constructor && instance[k].constructor !== Object && !(instance[k] instanceof cc.Asset)) {
+                    const subPrev = prevValues && prevValues[k] ? (prevValues[k].__value__ || prevValues[k]) : null;
+                    _populateInstance(instance[k], val.__value__ || val, subPrev, skipSetters);
                     continue;
                 }
             }
@@ -1000,6 +1035,7 @@ function _dumpLiveInstance(instance, className) {
         if (dump && dump.value) {
             _applyInstanceAttrsToDump(instance, dump, typeName);
             _recoverUnknownDumpTypes(instance, dump, typeName, instance);
+            _enrichDumpWithEditorProps(dump, instance, ctor);
             _translateDump(dump.value, '');
         }
         return dump;
@@ -1013,21 +1049,117 @@ function _dumpLiveInstance(instance, className) {
     }
 }
 
+function _hasProperty(obj, prop) {
+    if (!obj) return false;
+    try {
+        if (prop in obj) return true;
+    } catch {}
+    let cur = obj;
+    while (cur && cur !== Object.prototype && cur !== cc.Asset.prototype) {
+        if (Object.prototype.hasOwnProperty.call(cur, prop)) return true;
+        cur = Object.getPrototypeOf(cur);
+    }
+    return false;
+}
+
+function _enrichDumpWithEditorProps(dump, instance, ctor) {
+    if (!dump || !dump.value || !ctor) return;
+    const editorProps = ctor.__editor_props__ || (instance && instance.__editor_props__);
+    if (!editorProps || typeof editorProps !== 'object') return;
+
+    for (const [key, meta] of Object.entries(editorProps)) {
+        // Defensive check: only include properties that actually exist on this instance or ctor prototype
+        const exists = _hasProperty(instance, key) || (ctor.prototype && _hasProperty(ctor.prototype, key));
+        if (!exists) continue;
+
+        const rawVal = instance ? instance[key] : undefined;
+        if (!dump.value[key]) {
+            let typeName = 'Unknown';
+            if (meta.type) {
+                typeName = cc.js.getClassName(meta.type) || meta.type.name || String(meta.type);
+            } else if (typeof rawVal === 'boolean') {
+                typeName = 'Boolean';
+            } else if (typeof rawVal === 'number') {
+                typeName = Number.isInteger(rawVal) ? 'Integer' : 'Float';
+            } else if (typeof rawVal === 'string') {
+                typeName = 'String';
+            }
+            dump.value[key] = {
+                name: key,
+                type: typeName,
+                default: rawVal,
+                value: rawVal,
+                visible: true,
+                readonly: meta.readonly !== false,
+                displayName: meta.name || key,
+                group: meta.group || { name: "_Debugger", id: "0" },
+                isEditorProp: true
+            };
+        } else {
+            dump.value[key].visible = true;
+            if (meta.readonly !== undefined) {
+                dump.value[key].readonly = meta.readonly;
+            }
+            if (meta.group) {
+                dump.value[key].group = meta.group;
+            }
+            dump.value[key].isEditorProp = true;
+        }
+    }
+}
+
 function _extractLiveValues(instance, className) {
     const ctor = instance.constructor || (className ? cc.js.getClassByName(className) : null);
     const props = ctor ? _getCCProps(ctor) : [];
     const values = {};
     for (const p of props) {
+        if (BASE_ASSET_IGNORED_PROPS.has(p) || p.startsWith('__')) continue;
         try {
-            values[p] = instance[p];
+            const val = instance[p];
+            if (typeof val === 'function' || val instanceof Promise || val instanceof Map || val instanceof Set) continue;
+            values[p] = val;
         } catch {}
     }
     for (const k of Object.keys(instance)) {
-        if (!k.startsWith('_') && !(k in values)) {
+        if (!k.startsWith('_') && !(k in values) && !BASE_ASSET_IGNORED_PROPS.has(k) && !k.startsWith('__')) {
             try {
-                values[k] = instance[k];
+                const val = instance[k];
+                if (typeof val === 'function' || val instanceof Promise || val instanceof Map || val instanceof Set) continue;
+                values[k] = val;
             } catch {}
         }
+    }
+    // Extract @editor_property fields
+    const editorProps = (ctor && ctor.__editor_props__) || (instance && instance.__editor_props__);
+    if (editorProps && typeof editorProps === 'object') {
+        for (const epKey of Object.keys(editorProps)) {
+            const exists = _hasProperty(instance, epKey) || (ctor && ctor.prototype && _hasProperty(ctor.prototype, epKey));
+            if (!exists) continue;
+            if (!(epKey in values)) {
+                try {
+                    const val = instance[epKey];
+                    if (typeof val !== 'function' && !(val instanceof Promise) && !(val instanceof Map) && !(val instanceof Set)) {
+                        values[epKey] = val;
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+    // Walk prototype getters to extract runtime getter properties (e.g. passed)
+    let currProto = Object.getPrototypeOf(instance);
+    while (currProto && currProto !== Object.prototype && currProto !== cc.Asset.prototype) {
+        const descs = Object.getOwnPropertyDescriptors(currProto);
+        for (const [propName, desc] of Object.entries(descs)) {
+            if (desc.get && typeof desc.get === 'function' && !propName.startsWith('_') && !(propName in values) && !BASE_ASSET_IGNORED_PROPS.has(propName)) {
+                try {
+                    const val = instance[propName];
+                    if (typeof val !== 'function' && !(val instanceof Promise) && !(val instanceof Map) && !(val instanceof Set)) {
+                        values[propName] = val;
+                    }
+                } catch {}
+            }
+        }
+        currProto = Object.getPrototypeOf(currProto);
     }
     return values;
 }
@@ -1234,6 +1366,35 @@ exports.load = function() {
     const isPreview = Boolean(typeof window !== 'undefined' && window.isPreviewProcess);
     console.log('[pTS-Core] Scene script loaded, isPreviewProcess:', isPreview);
 
+    try {
+        if (typeof cc !== 'undefined' && cc.js && typeof cc.js.isChildClassOf === 'function' && !cc.js.isChildClassOf.__pts_hooked__) {
+            const origIsChild = cc.js.isChildClassOf;
+            const hooked = function(subClass, superClass) {
+                if (origIsChild(subClass, superClass)) return true;
+                if (typeof subClass === 'function' && typeof superClass === 'function') {
+                    const implKey = Symbol.for('__pTS_implements__');
+                    const superName = cc.js.getClassName(superClass) || superClass.name;
+                    let cur = subClass;
+                    const visited = new Set();
+                    while (cur && cur !== Object && cur !== Function && !visited.has(cur)) {
+                        visited.add(cur);
+                        const impls = cur[implKey] || cur.__pTS_implements__;
+                        if (impls) {
+                            if (impls.has && (impls.has(superClass) || (superName && impls.has(superName)))) return true;
+                            if (Array.isArray(impls) && (impls.includes(superClass) || (superName && impls.includes(superName)))) return true;
+                            if (typeof impls === 'object' && ((superClass in impls) || (superName && impls[superName]))) return true;
+                        }
+                        cur = Object.getPrototypeOf(cur);
+                    }
+                }
+                return false;
+            };
+            hooked.__pts_hooked__ = true;
+            cc.js.isChildClassOf = hooked;
+            console.log('[pTS-Core] Hooked cc.js.isChildClassOf for @implement multi-type support');
+        }
+    } catch (e) {}
+
     if (isPreview) {
         console.log('[pTS-Core] Initializing live preview sync ticker in [PreviewInEditor]...');
         if (_previewSyncInterval) clearInterval(_previewSyncInterval);
@@ -1288,6 +1449,13 @@ exports.methods = {
     },
 
     on_pts_property_changed(className, currentValues, propPath, newValue) {
+        if (typeof currentValues === 'string') {
+            try { currentValues = JSON.parse(currentValues); } catch (e) {}
+        }
+        if (typeof newValue === 'string' && (newValue.startsWith('[') || newValue.startsWith('{'))) {
+            try { newValue = JSON.parse(newValue); } catch (e) {}
+        }
+
         const ctor = cc.js.getClassByName(className);
         if (!ctor) {
             return { success: false, error: `Class ${className} not found` };
@@ -1329,14 +1497,16 @@ exports.methods = {
                         }
                     }
                     target[idx] = valToAssign;
-                } else if (parts.length === 1 && Array.isArray(newValue)) {
+                } else if (Array.isArray(newValue)) {
                     // Array property was already populated with proper CCClass or Asset instances
                     // by _populateInstance(instance, currentValues). Only invoke setter if defined.
-                    const desc = _findPropertyDescriptor(instance, propName);
+                    const desc = _findPropertyDescriptor(target, propName);
                     if (desc && typeof desc.set === 'function') {
                         try {
-                            target[propName] = instance[propName];
+                            target[propName] = target[propName];
                         } catch (e) {}
+                    } else if (!target[propName] || !Array.isArray(target[propName])) {
+                        target[propName] = newValue;
                     }
                 } else {
                     target[propName] = newValue;
@@ -1443,13 +1613,186 @@ exports.methods = {
             return { isPreview: true, found: false };
         }
 
+        const ctor = instance.constructor || (className ? cc.js.getClassByName(className) : null);
         const dump = _dumpLiveInstance(instance, className);
         const values = _extractLiveValues(instance, className);
+        const rawEditorProps = (ctor && ctor.__editor_props__) || (instance && instance.__editor_props__) || {};
+        const editorProps = {};
+        for (const [k, meta] of Object.entries(rawEditorProps)) {
+            if (_hasProperty(instance, k) || (ctor && ctor.prototype && _hasProperty(ctor.prototype, k))) {
+                editorProps[k] = meta;
+            }
+        }
         return {
             isPreview: true,
             found: true,
             dump: dump,
-            values: values
+            values: values,
+            editorProps: editorProps
+        };
+    },
+
+    set_pts_runtime_property(uuid, className, propPath, newValue) {
+        const instance = getLiveInstance(uuid, className);
+        if (!instance) {
+            return { success: false, error: `Live runtime instance not found for uuid: ${uuid}` };
+        }
+
+        const parts = String(propPath).split('.');
+        let target = instance;
+        for (let i = 0; i < parts.length - 1; i++) {
+            const part = parts[i];
+            if (target && target[part] !== undefined) {
+                target = target[part];
+            }
+        }
+        const propName = parts[parts.length - 1];
+
+        if (!target) {
+            return { success: false, error: `Target not found for property path: ${propPath}` };
+        }
+
+        // 1. Check if getter-only without setter
+        const desc = _findPropertyDescriptor(target, propName);
+        if (desc && typeof desc.get === 'function' && typeof desc.set !== 'function') {
+            console.warn(`[pTS-Core] Runtime modification rejected: ${propPath} is getter-only (readonly)`);
+            return { success: false, readonly: true, error: `Property ${propPath} is getter-only (readonly)` };
+        }
+
+        // 2. Check @property({ readonly: true }) in cc.Class attributes
+        const targetCtor = target.constructor;
+        if (targetCtor && typeof cc !== 'undefined' && cc.Class && cc.Class.Attr && typeof cc.Class.Attr.getClassAttrs === 'function') {
+            try {
+                const attrs = cc.Class.Attr.getClassAttrs(targetCtor);
+                if (attrs) {
+                    const del = cc.Class.Attr.DELIMETER || '$_$';
+                    if (attrs[propName + del + 'readonly'] === true || attrs[propName + '$_$readonly'] === true) {
+                        console.warn(`[pTS-Core] Runtime modification rejected: ${propPath} is marked readonly in @property`);
+                        return { success: false, readonly: true, error: `Property ${propPath} is marked readonly in @property` };
+                    }
+                }
+            } catch (e) {}
+        }
+
+        // 3. Apply the property update directly to live instance in memory
+        try {
+            if (Array.isArray(target) && !isNaN(Number(propName))) {
+                const idx = Number(propName);
+                let valToAssign = newValue;
+                let u = '';
+                if (typeof newValue === 'string' && (newValue.includes('-') || newValue.includes('@'))) {
+                    u = newValue;
+                } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue._uuid || newValue.__value__?.uuid || newValue.__value__?._uuid)) {
+                    u = newValue._uuid || newValue.uuid || newValue.__value__?._uuid || newValue.__value__?.uuid;
+                }
+                if (u) {
+                    const asset = (cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(u) : null;
+                    valToAssign = asset || { _uuid: u, uuid: u };
+                    if (!asset && cc.assetManager && cc.assetManager.loadAny) {
+                        try { cc.assetManager.loadAny({ uuid: u }, () => {}); } catch (e) {}
+                    }
+                }
+                target[idx] = valToAssign;
+            } else if (Array.isArray(newValue)) {
+                const resolvedArr = [];
+                for (let i = 0; i < newValue.length; i++) {
+                    const item = newValue[i];
+                    let u = '';
+                    if (typeof item === 'string' && (item.includes('-') || item.includes('@'))) {
+                        u = item;
+                    } else if (item && typeof item === 'object' && (item.uuid || item._uuid || item.__value__?.uuid || item.__value__?._uuid)) {
+                        u = item._uuid || item.uuid || item.__value__?._uuid || item.__value__?.uuid;
+                    }
+                    if (u && typeof cc !== 'undefined' && cc.assetManager && cc.assetManager.assets) {
+                        const asset = cc.assetManager.assets.get(u);
+                        resolvedArr.push(asset || { _uuid: u, uuid: u });
+                        if (!asset && cc.assetManager.loadAny) {
+                            try { cc.assetManager.loadAny({ uuid: u }, () => {}); } catch (e) {}
+                        }
+                    } else {
+                        resolvedArr.push(item);
+                    }
+                }
+                const desc = _findPropertyDescriptor(target, propName);
+                if (desc && typeof desc.set === 'function') {
+                    try {
+                        target[propName] = resolvedArr;
+                    } catch (e) {}
+                } else {
+                    target[propName] = resolvedArr;
+                }
+            } else {
+                let u = '';
+                if (typeof newValue === 'string' && (newValue.includes('-') || newValue.includes('@'))) {
+                    u = newValue;
+                } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue._uuid)) {
+                    u = newValue._uuid || newValue.uuid;
+                }
+                if (u && typeof cc !== 'undefined' && cc.assetManager && cc.assetManager.assets) {
+                    const asset = cc.assetManager.assets.get(u);
+                    if (asset) {
+                        target[propName] = asset;
+                    } else {
+                        target[propName] = newValue;
+                    }
+                } else {
+                    target[propName] = newValue;
+                }
+            }
+        } catch (setErr) {
+            console.error(`[pTS-Core] Error applying runtime property setter for ${propPath}:`, setErr);
+            return { success: false, error: String(setErr) };
+        }
+
+        // 4. Ensure backing field '_' + propName is synced if present
+        const backingKey = '_' + propName;
+        if (target && (backingKey in target || target.hasOwnProperty(backingKey))) {
+            try {
+                if (target[backingKey] === undefined || target[backingKey] === null || target[backingKey] === '') {
+                    target[backingKey] = newValue;
+                }
+            } catch (e) {}
+        }
+
+        // 5. Trigger onFocusInEditor if implemented on live instance
+        try {
+            if (typeof instance.onFocusInEditor === 'function') {
+                instance.onFocusInEditor();
+            }
+        } catch (e) {}
+
+        // 6. Extract updated values & dump from the live instance
+        const updatedDump = _dumpLiveInstance(instance, className);
+        const updatedValues = _extractLiveValues(instance, className);
+
+        // 7. Extract dynamic instance attributes (enumLists) & visibility
+        const enumLists = _extractInstanceAttrs(instance);
+        _cachedInstanceAttrs[className] = enumLists;
+        const evalResult = _evaluatePtsLive(className, updatedValues);
+
+        // 8. Immediately broadcast snapshot via Editor.Message so main process is in sync
+        const editor = (typeof globalThis !== 'undefined' && globalThis.Editor) || (typeof window !== 'undefined' && window.Editor);
+        if (editor && editor.Message && typeof editor.Message.send === 'function') {
+            try {
+                editor.Message.send('pts-asset', 'sync-preview-data', {
+                    [uuid]: {
+                        uuid: uuid,
+                        name: className,
+                        values: updatedValues
+                    }
+                });
+            } catch (e) {}
+        }
+
+        return {
+            success: true,
+            values: updatedValues,
+            dump: updatedDump,
+            enumLists: Object.assign({}, evalResult.enumLists || {}, enumLists),
+            visibility: evalResult.visibility,
+            arrayVisibility: evalResult.arrayVisibility,
+            getters: evalResult.getters,
+            arrayGetters: evalResult.arrayGetters
         };
     },
 
