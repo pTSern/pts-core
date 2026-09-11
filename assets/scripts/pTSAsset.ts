@@ -11,6 +11,8 @@ export { implement, imps };
 const { ccclass } = _decorator;
 
 const _hydratePromise_ = Symbol('_hydratePromise_');
+const _readyDeferredResolve_ = Symbol('_readyDeferredResolve_');
+const _readyDeferredPromise_ = Symbol('_readyDeferredPromise_');
 
 @ccclass("pTSAsset")
 export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
@@ -19,6 +21,9 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
 
     @editor_property()
     protected _isLoaded: boolean = false;
+
+    private [_readyDeferredResolve_]: (() => void) | null = null;
+    private [_readyDeferredPromise_]: Promise<void> | null = null;
 
     static add(assets: pFlex.TArray<pTSAsset>, func: pFlex.TArray<pFlex.THandler>, ...funcs: pFlex.THandler[]) {
         assets = pArray.flatter(assets);
@@ -39,14 +44,18 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
     }
 
     get ready(): Promise<void> {
-        if (!this[_hydratePromise_]) {
-            if (!this._isLoaded) {
-                this.hydrate();
-            } else {
-                return Promise.resolve();
-            }
+        if (this[_hydratePromise_]) {
+            return this[_hydratePromise_];
         }
-        return this[_hydratePromise_] || Promise.resolve();
+        if (this._isLoaded) {
+            return Promise.resolve();
+        }
+        if (!this[_readyDeferredPromise_]) {
+            this[_readyDeferredPromise_] = new Promise<void>((resolve) => {
+                this[_readyDeferredResolve_] = resolve;
+            });
+        }
+        return this[_readyDeferredPromise_];
     }
 
     protected hydrate(depsPromise?: Promise<any>): Promise<void> {
@@ -71,6 +80,11 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
                 await this._onAwake?.();
             } catch (err) {
                 console.error(`[pTSAsset] Error in _onAwake for ${(this as any).name || this.constructor.name}:`, err);
+            }
+        }).then(() => {
+            if (this[_readyDeferredResolve_]) {
+                this[_readyDeferredResolve_]();
+                this[_readyDeferredResolve_] = null;
             }
         });
 
