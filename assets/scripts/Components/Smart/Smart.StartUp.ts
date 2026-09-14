@@ -62,6 +62,8 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
     @editor_property()
     protected _stacked: number = 0;
 
+    protected async _doAwaitTillReady?(): Promise<any>
+
     async execute(...args: any[]) {
         if (!this.isValid || !pEngine.CompUtils.isOnLoaded(this) || !this.uuid) {
             console.warn(
@@ -82,6 +84,7 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
             this._isExecuting = true;
 
             this.onExecute.emit(...args);
+            await this._doAwaitTillReady?.();
             await this._onExecute(...args);
             this._isExecuting = false;
             if(this._stacked > 0) {

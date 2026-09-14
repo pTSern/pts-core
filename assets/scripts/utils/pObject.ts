@@ -186,3 +186,34 @@ export function hook<_TObject extends object>(obj: _TObject, prop: pFlex.TKeyOf<
         })
     })
 }
+
+export function getAllMethodNames<T extends object>(instance: T, includeInherited: boolean = true): (keyof T)[] {
+    const methodNames = new Set<string | symbol>();
+
+    for (const key of Object.getOwnPropertyNames(instance)) {
+        const descriptor = Object.getOwnPropertyDescriptor(instance, key);
+        if (descriptor && typeof descriptor.value === 'function') {
+            methodNames.add(key);
+        }
+    }
+
+    // 2. Traverse the prototype chain for standard class methods
+    let currentProto = Object.getPrototypeOf(instance);
+
+    while (currentProto && currentProto !== Object.prototype) {
+        for (const key of Object.getOwnPropertyNames(currentProto)) {
+            // Skip the constructor
+            if (key === 'constructor') continue;
+
+            const descriptor = Object.getOwnPropertyDescriptor(currentProto, key);
+            if (descriptor && typeof descriptor.value === 'function') {
+                methodNames.add(key);
+            }
+        }
+
+        if (!includeInherited) break;
+        currentProto = Object.getPrototypeOf(currentProto);
+    }
+
+    return Array.from(methodNames) as (keyof T)[];
+}

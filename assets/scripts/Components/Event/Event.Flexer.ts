@@ -1,7 +1,7 @@
 import { _decorator, CCInteger, EventHandler, JsonAsset } from 'cc';
 import { pEngine } from '../../utils';
 import { editor_property } from '../../utils/pClass';
-import { pTSAsset_Emitter } from '../../pTSAsset';
+import { pTSAsset_Emitter, pTSAsset_Handler } from '../../pTSAsset/pTSAsset.Event';
 
 const { ccclass, property } = _decorator;
 
@@ -17,7 +17,10 @@ export class Event_Flexer<_TInterfaces extends Record<string, any> = { event: pF
     isJsonFirst: boolean = true;
 
     @property({ type: pTSAsset_Emitter })
-    pTS: pTSAsset_Emitter[] = []
+    emmiter: pTSAsset_Emitter[] = []
+
+    @property({ type: pTSAsset_Handler })
+    handler: pTSAsset_Handler[] = []
 
     @property({  })
     isCleanUpAfterEmit: boolean = false
@@ -38,7 +41,8 @@ export class Event_Flexer<_TInterfaces extends Record<string, any> = { event: pF
             pEngine.Json.event.invoke(this.json, ...args),
         ]
 
-        this.pTS.forEach(_pTS => _out.push(..._pTS.emit(...args)));
+        this.emmiter.forEach(_pTS => _out.push(_pTS.emit(...args)));
+        this.handler.forEach(_pTS => _out.push(_pTS.emit(...args)));
 
         if(this.intMaxEmitCount > 0 && this._emitted >= this.intMaxEmitCount) {
             this.handlers = [];
