@@ -208,12 +208,6 @@ function _$hould(mode: _TMode) {
 
 export function editor_property(type?: any, opt?: { name?: string, multiline?: boolean, override?: boolean, kill?: boolean, writable?: boolean }, mode: _TMode = 'EDITOR_ONLY_IN_PREVIEW') {
     return (target: any, key: string, descriptor?: PropertyDescriptor) => {
-        const desc = descriptor || (target ? Object.getOwnPropertyDescriptor(target, key) : undefined);
-        const isGetter = Boolean(desc && typeof desc.get === 'function');
-        const isSetter = Boolean(desc && typeof desc.set === 'function');
-        const isAccessor = isGetter || isSetter;
-        const isGetterOnly = Boolean(isGetter && !desc?.set);
-
         // 1. Always record metadata on constructor and prototype for inspector runtime reflection
         const ctor = typeof target === 'function' ? target : target?.constructor;
         if (ctor) {
@@ -228,28 +222,20 @@ export function editor_property(type?: any, opt?: { name?: string, multiline?: b
                 readonly: !opt?.writable,
                 multiline: !!opt?.multiline,
                 override: !!opt?.override,
-                isGetter: isGetter,
-                isGetterOnly: isGetterOnly,
+                isGetter: !!descriptor?.get,
                 mode: mode,
-                isEditorProp: true,
-                serializable: false,
                 group: { name: "_Debugger", id: "0" }
             };
-            if (!ctor.__pts_editor_props__) ctor.__pts_editor_props__ = new Set<string>();
-            ctor.__pts_editor_props__.add(key);
-
             if (target && target !== ctor) {
                 if (!Object.prototype.hasOwnProperty.call(target, '__editor_props__')) {
                     target.__editor_props__ = Object.assign({}, target.__editor_props__ || {});
                 }
                 target.__editor_props__[key] = ctor.__editor_props__[key];
-                if (!target.__pts_editor_props__) target.__pts_editor_props__ = new Set<string>();
-                target.__pts_editor_props__.add(key);
             }
         }
 
         if (!EDITOR) {
-            if (opt?.kill && desc?.get) desc.get = () => null;
+            if (opt?.kill && descriptor?.get) descriptor.get = () => null;
             return;
         }
 
@@ -259,13 +245,6 @@ export function editor_property(type?: any, opt?: { name?: string, multiline?: b
             readonly: !opt?.writable,
             visible: () => pConst?.EDITOR_ONLY_IN_PREVIEW ?? false
         };
-        // In Cocos Creator, every getter is non-serialized by default.
-        // Specifying serializable: false or editorOnly: true on any getter/accessor causes an engine error.
-        // Only set them on normal fields.
-        if (!isAccessor && !isGetter) {
-            options.serializable = false;
-            options.editorOnly = true;
-        }
         if (type) options.type = type;
         if (opt?.name) options.displayName = opt.name;
         if (opt?.multiline) options.multiline = true;
@@ -382,7 +361,6 @@ export function hookJsIsChildClassOf(): void {
                     return false;
                 };
                 (hooked as any).__pts_hooked__ = true;
-                //@ts-ignore
                 js.isChildClassOf = hooked;
                 _hasHookedIsChildClassOf = true;
             }
@@ -420,7 +398,6 @@ export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Functi
                     }
                 }
             } else if (typeof impls === 'object') {
-                //@ts-ignore
                 if (impls[superName] || (superClass in impls)) return true;
                 for (const key of Object.keys(impls)) {
                     const c = js.getClassByName(key);
