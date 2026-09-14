@@ -375,6 +375,32 @@ const BASE_ASSET_IGNORED_PROPS = new Set([
     'enabled', '_enabled', 'node'
 ]);
 
+function _getEditorPropsOfClass(ctor, instance) {
+    const ep = {};
+    let cur = ctor;
+    while (cur && cur !== Object && cur !== Function && cur !== cc.Asset) {
+        if (cur.__editor_props__ && typeof cur.__editor_props__ === 'object') {
+            Object.assign(ep, cur.__editor_props__);
+        }
+        if (cur.prototype && cur.prototype.__editor_props__ && typeof cur.prototype.__editor_props__ === 'object') {
+            Object.assign(ep, cur.prototype.__editor_props__);
+        }
+        cur = Object.getPrototypeOf(cur);
+    }
+    if (instance && instance.__editor_props__ && typeof instance.__editor_props__ === 'object') {
+        Object.assign(ep, instance.__editor_props__);
+    }
+    return ep;
+}
+
+function _isEditorProp(ctor, instance, key) {
+    if (!key) return false;
+    if (ctor && ctor.__pts_editor_props__ && ctor.__pts_editor_props__.has && ctor.__pts_editor_props__.has(key)) return true;
+    if (instance && instance.__pts_editor_props__ && instance.__pts_editor_props__.has && instance.__pts_editor_props__.has(key)) return true;
+    const ep = _getEditorPropsOfClass(ctor, instance);
+    return Boolean(ep && ep[key]);
+}
+
 function _serializeInstance(instance) {
     if (!instance || typeof instance !== 'object') return instance;
     const ctor = instance.constructor;
@@ -389,7 +415,7 @@ function _serializeInstance(instance) {
         if (BASE_ASSET_IGNORED_PROPS.has(p) || p.startsWith('__')) {
             continue;
         }
-        if (ctor.__editor_props__ && ctor.__editor_props__[p]) {
+        if (_isEditorProp(ctor, instance, p)) {
             continue;
         }
         if (gettersInfo[p] && gettersInfo[p].readonly) {
@@ -469,7 +495,13 @@ function _serializeInstance(instance) {
             if (BASE_ASSET_IGNORED_PROPS.has(k)) {
                 continue;
             }
+            if (_isEditorProp(ctor, instance, k)) {
+                continue;
+            }
             const publicPropName = k.slice(1);
+            if (_isEditorProp(ctor, instance, publicPropName)) {
+                continue;
+            }
             const hasPublicProp = (ctor.__props__ && ctor.__props__.includes(publicPropName)) || (publicPropName in instance);
             if (!hasPublicProp) {
                 continue;
@@ -697,6 +729,7 @@ function _getComponentDumpByName(className, currentValues) {
         if (dump && dump.value) {
             _applyInstanceAttrsToDump(instance, dump, className);
             _recoverUnknownDumpTypes(instance, dump, className, currentValues);
+            _enrichDumpWithEditorProps(dump, instance, ctor);
             _translateDump(dump.value, '');
 
             const gettersInfo = _getGettersOfClass(ctor);
@@ -706,6 +739,7 @@ function _getComponentDumpByName(className, currentValues) {
                     dump.value[g].readonly = true;
                 }
             }
+            dump.__editor_props__ = _getEditorPropsOfClass(ctor, instance);
         }
 
         if (instance instanceof cc.Object && typeof instance.destroy === 'function' && (instance['node'] instanceof cc.Node)) {
@@ -1037,6 +1071,7 @@ function _dumpLiveInstance(instance, className) {
             _recoverUnknownDumpTypes(instance, dump, typeName, instance);
             _enrichDumpWithEditorProps(dump, instance, ctor);
             _translateDump(dump.value, '');
+            dump.__editor_props__ = _getEditorPropsOfClass(ctor, instance);
         }
         return dump;
     } catch (err) {
@@ -1064,7 +1099,7 @@ function _hasProperty(obj, prop) {
 
 function _enrichDumpWithEditorProps(dump, instance, ctor) {
     if (!dump || !dump.value || !ctor) return;
-    const editorProps = ctor.__editor_props__ || (instance && instance.__editor_props__);
+    const editorProps = _getEditorPropsOfClass(ctor, instance);
     if (!editorProps || typeof editorProps !== 'object') return;
 
     for (const [key, meta] of Object.entries(editorProps)) {
