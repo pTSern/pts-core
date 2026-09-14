@@ -8,11 +8,13 @@ import { editor_property, implement, imps } from "./utils/pClass";
 
 export { implement, imps };
 
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 
 const _hydratePromise_ = Symbol('_hydratePromise_');
 const _readyDeferredResolve_ = Symbol('_readyDeferredResolve_');
 const _readyDeferredPromise_ = Symbol('_readyDeferredPromise_');
+
+
 
 @ccclass("pTSAsset")
 export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
@@ -163,6 +165,30 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
         } catch (err) {
             console.error(`[pTSAsset] Error in onFocusInEditor for ${(this as any).name || this.constructor.name}:`, err);
         }
+    }
+}
+
+@ccclass("pTSAsset_Emitter")
+export class pTSAsset_Emitter {
+    @property({})
+    event: string = ''
+
+    @property({ type: [pTSAsset] })
+    assets: pTSAsset[] = []
+
+    emit(...args: any[]) {
+        if (!this.event || !this.assets || this.assets.length === 0) return;
+
+        const _out = []
+        for (const asset of this.assets) {
+            try {
+                const res = asset.emit(this.event as any, ...args);
+                _out.push(res);
+            } catch (err) {
+                _out.push(undefined);
+            }
+        }
+        return _out;
     }
 }
 
