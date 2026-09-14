@@ -1,6 +1,6 @@
 
 import { _decorator, CCClass, Component, Enum, isValid, js, Node } from 'cc';
-import { pClass, pConst, pEngine, pGlobal, pObject } from '../../utils';
+import { pClass, pConst, pObject } from '../../utils';
 import { Editor_Smart_SelfFocus } from '../../editor/Smart/Editor.Smart.SelfFocus';
 
 const { ccclass, property } = _decorator;

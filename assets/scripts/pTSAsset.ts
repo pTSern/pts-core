@@ -1,10 +1,12 @@
-import { __private, _decorator, Asset, Director, director, assetManager } from "cc";
+import { __private, _decorator, Asset, Director, director, assetManager, CCClass, Enum } from "cc";
 import { BUILD } from "cc/env";
 import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
 import { IS_TEST } from "./utils/pConst";
-import { pArray } from "./utils";
+import { pArray, pObject } from "./utils";
 import { editor_property, implement, imps } from "./utils/pClass";
+import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
+import { Editor_Smart_SelfFocus } from "./editor/Smart/Editor.Smart.SelfFocus";
 
 export { implement, imps };
 
@@ -14,10 +16,15 @@ const _hydratePromise_ = Symbol('_hydratePromise_');
 const _readyDeferredResolve_ = Symbol('_readyDeferredResolve_');
 const _readyDeferredPromise_ = Symbol('_readyDeferredPromise_');
 
-
-
 @ccclass("pTSAsset")
 export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
+    protected static _bounces: string[] = [];
+    static CCEvents(target: pTSAsset) {
+        if(!target) return [];
+        const _out = target.constructor['_bounces'] || [];
+        return CC_IEnumList.generator(['any', ..._out]);
+    }
+
     protected _onLoad?(): void;
     protected _onReleased?(): void;
 
@@ -165,30 +172,6 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
         } catch (err) {
             console.error(`[pTSAsset] Error in onFocusInEditor for ${(this as any).name || this.constructor.name}:`, err);
         }
-    }
-}
-
-@ccclass("pTSAsset_Emitter")
-export class pTSAsset_Emitter {
-    @property({})
-    event: string = ''
-
-    @property({ type: [pTSAsset] })
-    assets: pTSAsset[] = []
-
-    emit(...args: any[]) {
-        if (!this.event || !this.assets || this.assets.length === 0) return;
-
-        const _out = []
-        for (const asset of this.assets) {
-            try {
-                const res = asset.emit(this.event as any, ...args);
-                _out.push(res);
-            } catch (err) {
-                _out.push(undefined);
-            }
-        }
-        return _out;
     }
 }
 
