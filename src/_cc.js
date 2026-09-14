@@ -193,42 +193,6 @@ function _getGettersOfClass(ctor) {
     return getters;
 }
 
-function _enrichDumpWithGetters(dump, ctor) {
-    if (!dump || !dump.value || !ctor) return;
-    const gettersInfo = _getGettersOfClass(ctor);
-    for (const g in gettersInfo) {
-        if (dump.value[g]) {
-            dump.value[g].isGetter = true;
-            if (gettersInfo[g].hasSetter) {
-                dump.value[g].hasSetter = true;
-            }
-            if (gettersInfo[g].readonly) {
-                dump.value[g].readonly = true;
-            }
-        }
-    }
-    for (const key of Object.keys(dump.value)) {
-        const item = dump.value[key];
-        if (item && item.value && typeof item.value === 'object' && !Array.isArray(item.value)) {
-            const nestedType = item.actualType || item.type;
-            const nestedCtor = nestedType ? cc.js.getClassByName(nestedType) : null;
-            if (nestedCtor) {
-                _enrichDumpWithGetters(item, nestedCtor);
-            }
-        } else if (item && Array.isArray(item.value)) {
-            for (const elem of item.value) {
-                if (elem && elem.value && typeof elem.value === 'object') {
-                    const elemType = elem.actualType || elem.type;
-                    const elemCtor = elemType ? cc.js.getClassByName(elemType) : null;
-                    if (elemCtor) {
-                        _enrichDumpWithGetters(elem, elemCtor);
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ─── Monkeypatch cc.Class.Attr.setClassAttr for per-instance attributes ───
 if (typeof cc !== 'undefined' && cc.Class && cc.Class.Attr) {
     if (!cc.Class.Attr.__pts_instance_patched__) {
@@ -454,11 +418,7 @@ function _serializeInstance(instance) {
         if (_isEditorProp(ctor, instance, p)) {
             continue;
         }
-        // Skip ALL getters and accessors! Every getter is non-serialized on disk.
-        if (gettersInfo[p]) {
-            continue;
-        }
-        if (('_' + p) in instance || (ctor.__props__ && ctor.__props__.includes('_' + p))) {
+        if (gettersInfo[p] && gettersInfo[p].readonly) {
             continue;
         }
 
@@ -560,17 +520,6 @@ function _serializeInstance(instance) {
                 };
             } else {
                 result[k] = v;
-            }
-        }
-    }
-
-    // 3. Ensure backing fields starting with '_' are synced with their public getter/setter counterparts if empty
-    for (const k of Object.keys(result)) {
-        if (k.startsWith('_') && (result[k] === '' || result[k] === undefined)) {
-            const pub = k.slice(1);
-            const pubVal = (instance && instance[pub] !== undefined && instance[pub] !== '') ? instance[pub] : result[pub];
-            if (pubVal !== undefined && pubVal !== '') {
-                result[k] = pubVal;
             }
         }
     }
@@ -785,7 +734,11 @@ function _getComponentDumpByName(className, currentValues) {
 
             const gettersInfo = _getGettersOfClass(ctor);
             dump.__getters__ = gettersInfo;
-            _enrichDumpWithGetters(dump, ctor);
+            for (const g in gettersInfo) {
+                if (dump.value[g] && gettersInfo[g].readonly) {
+                    dump.value[g].readonly = true;
+                }
+            }
             dump.__editor_props__ = _getEditorPropsOfClass(ctor, instance);
         }
 
@@ -1118,9 +1071,6 @@ function _dumpLiveInstance(instance, className) {
             _recoverUnknownDumpTypes(instance, dump, typeName, instance);
             _enrichDumpWithEditorProps(dump, instance, ctor);
             _translateDump(dump.value, '');
-            const gettersInfo = _getGettersOfClass(ctor);
-            dump.__getters__ = gettersInfo;
-            _enrichDumpWithGetters(dump, ctor);
             dump.__editor_props__ = _getEditorPropsOfClass(ctor, instance);
         }
         return dump;
