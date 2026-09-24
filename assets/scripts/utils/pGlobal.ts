@@ -1,6 +1,7 @@
 
 import * as cc from "cc";
 import * as CC from "cc/env";
+import * as pConst from "./pConst";
 
 /**
  * pGlobal: System-wide utilities, logging, and miscellaneous helpers.
@@ -83,12 +84,27 @@ interface _ILogger {
     group(level: _TLogLevel, title: string, ...list: any[][]): void
 }
 
+type _TLogOpt = {
+    level: _TLogLevel;
+    group: string
+    color?: string | cc.Color
+    weight?: "bold" | "light" | "italic";
+} | _TLogLevel
 
 export const Logger = cc.js.createMap<_ILogger>();
-export function log(level: _TLogLevel, ...args: any[]) {
-    if(level === 'DEV' && !CC.DEV) return;
+export function log(opt: _TLogOpt, ...args: any[]) {
+    if(typeof opt === 'object') {
+        let { level, group, color, weight } = opt;
+        weight = weight || 'bold';
+        color = color ? color instanceof cc.Color ? `#${color.toHEX('#rrggbbaa')}` : color : '#3498db';
+        if(level === 'DEV' && !CC.DEV) return;
+        console.log(`%c ${group}`, `color: ${color}; font-weight: ${weight}`, ...args);
+        return;
+    }
+    if(opt === 'DEV' && !CC.DEV) return;
     console.log.call(console, ...args);
 }
+
 export function warn(level: _TLogLevel, ...args: any[]) {
     if(level === 'DEV' && !CC.DEV) return;
     console.log.call(console, ...args);

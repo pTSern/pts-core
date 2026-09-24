@@ -2,21 +2,26 @@
 import { _decorator } from 'cc';
 import { pTSAsset } from 'db://pts-core/scripts/pTSAsset';
 
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 
 interface _<_TType, _TOut> {
     onChanged: pFlex.TFunc<[_TOut, _TOut], void>
 }
 
+let _sym = null;
+
 @ccclass('pTSAsset_Data')
 export abstract class pTSAsset_Data<_TType = any, _TOut = _TType> extends pTSAsset<_<_TType, _TOut>> {
     abstract data: _TType;
+    @property({ })
+    readonly: boolean = false;
 
     get() {
-        return this._clone(this.data);
+        return this._clone(this.readonly ? this[_sym] : this.data);
     }
 
     set(value: _TOut, force: boolean = false) {
+        if(this.readonly) return;
         //@ts-ignore
         if(this.data === value && !force) return;
 
@@ -27,9 +32,18 @@ export abstract class pTSAsset_Data<_TType = any, _TOut = _TType> extends pTSAss
     }
 
     add(value: _TType) {
+        if(this.readonly) return;
+
         const _old = this._clone(this.data);
         this.data = this._add(this.data, value);
         this.emit('onChanged', this._clone(this.data), _old);
+    }
+
+    protected _onLoad(): void | Promise<void> {
+        if(this.readonly) {
+            _sym = Symbol(this.uuid);
+            this[_sym] = this.data
+        }
     }
 
     protected abstract _clone(value: _TType): _TOut
