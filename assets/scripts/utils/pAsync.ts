@@ -6,6 +6,7 @@ import { VOID_FUNC, RESOLVER } from "./pConst";
 import { uuid } from "./pString";
 
 import { _decorator, CCString, js } from 'cc'
+import * as pGlobal from "./pGlobal";
 
 /**
  * pAsync: Asynchronous utilities.
@@ -213,7 +214,7 @@ export class Task<_T = void> {
     @editor_property()
     protected _count: number = 0
 
-    @editor_property(CCString)
+    @editor_property(CCString, { multiline: true })
     protected _costs = []
 
     @editor_property()
@@ -248,8 +249,8 @@ export class Task<_T = void> {
         return this;
     }
 
-    recycle() {
-        if(this._state === 'pending') {
+    recycle(force: boolean = false) {
+        if(this._state === 'pending' && !force) {
             //console.warn("[Async_Task] Is already pending, no need to recycle. Please wait for it to complete or `.abort` it if you want to recycle immediately.")
             return this;
         }
@@ -257,18 +258,20 @@ export class Task<_T = void> {
         this._count ++;
         this._state = 'pending';
         this._start = Date.now();
-        if(!this._promise) {
-            this._promise = new Promise<_T>( (_rs, _rj) => {
-                this._resolver = _rs;
-                this._rejecter = _rj;
-            } )
-        }
+        this._result = null;
+        this._onCompletes = [];
+
+        this._promise = new Promise<_T>( (_rs, _rj) => {
+            this._resolver = _rs;
+            this._rejecter = _rj;
+        } )
 
         _pool.push(this);
         return this;
     }
 
-    abort(cleanup: boolean = true) {
+    abort(cleanup: boolean = true, ...args: any[]) {
+        (args?.length > 0) && pGlobal.log({ level: 'DEV', group: 'Async_Task' }, `[Async_Task] Aborted in ${(Date.now() - this._start)/1000}s | ${this._onCompletes.length} callbacks`, ...args);
         this._resolve('aborted', null, cleanup)
         return this;
     }
@@ -286,7 +289,7 @@ export class Task<_T = void> {
     protected _resolve(state: _TState, params: any, cleanup: boolean) {
         if(this._state !== 'pending') return;
 
-        this._state = 'resolved';
+        this._state = state;
 
         const _cbs = [...this._onCompletes];
         cleanup && ( this._onCompletes = [] )
@@ -295,7 +298,7 @@ export class Task<_T = void> {
         const _rj = this._rejecter;
         this._rejecter = this._resolver = VOID_FUNC;
 
-        this._costs.push(`${this._count}: ${state} in ${(Date.now() - this._start)/1000}s`)
+        this._costs.push(`[ ${this._count} ] > ${state} in ${(Date.now() - this._start)/1000}s | ${_cbs.length} callbacks`);
         state === 'rejected' ? (_rj(params), this._result = null) : _rs(params);
 
         if(state === 'resolved') {
