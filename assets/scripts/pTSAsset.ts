@@ -1,16 +1,15 @@
-import { __private, _decorator, Asset, Director, director, assetManager, CCClass, Enum } from "cc";
+import { __private, _decorator, Asset, Director, director, assetManager } from "cc";
 import { BUILD } from "cc/env";
 import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
 import { IS_TEST } from "./utils/pConst";
-import { pArray, pObject } from "./utils";
+import { pArray, pString } from "./utils";
 import { editor_property, implement, imps } from "./utils/pClass";
 import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
-import { Editor_Smart_SelfFocus } from "./editor/Smart/Editor.Smart.SelfFocus";
 
 export { implement, imps };
 
-const { ccclass, property } = _decorator;
+const { ccclass } = _decorator;
 
 const _hydratePromise_ = Symbol('_hydratePromise_');
 const _readyDeferredResolve_ = Symbol('_readyDeferredResolve_');
@@ -171,6 +170,198 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
             this.onFocusInEditor?.();
         } catch (err) {
             console.error(`[pTSAsset] Error in onFocusInEditor for ${(this as any).name || this.constructor.name}:`, err);
+        }
+    }
+
+    /**
+     * Creates an independent deep-cloned runtime instance of this pTSAsset.
+     * The clone is completely separate: destroying the original will not destroy the clone.
+     */
+    clone(): this {
+        const ctor = this.constructor as new () => this;
+        const cloned = new ctor();
+
+        // Assign a distinct runtime UUID and cloned name
+        const newUuid = pString?.uuid ? pString.uuid() : `${this.uuid}_clone_${Date.now()}`;
+        (cloned as any)._uuid = newUuid;
+        cloned.name = this.name ? `${this.name}_clone` : `${ctor.name}_clone`;
+
+        // Deep copy properties from this to cloned
+        _$deepCloneProperties(this, cloned);
+
+        // Fresh event driver and runtime load state
+        cloned._driver = pDriver.Handler.create();
+        (cloned as any)._isLoaded = true;
+
+        try {
+            (cloned as any)._onLoad?.();
+            (cloned as any)._onCloned?.(this);
+        } catch (e) {
+            console.error(`[pTSAsset] Error during clone initialization for ${(cloned as any).name}:`, e);
+        }
+
+        return cloned;
+    }
+
+    /**
+     * Optional lifecycle hook called on a freshly cloned instance after its properties are populated.
+     */
+    protected _onCloned?(original: this): void;
+}
+
+function _$cloneValue(val: any, seen: Map<any, any>, depth = 0): any {
+    if (depth > 12) return val;
+    if (val === null || val === undefined) return val;
+    if (typeof val === 'number' || typeof val === 'string' || typeof val === 'boolean' || typeof val === 'bigint' || typeof val === 'symbol') {
+        return val;
+    }
+    if (typeof val === 'function') return val;
+
+    // Cycle detection
+    if (seen.has(val)) {
+        return seen.get(val);
+    }
+
+    // pTSAsset: recursive deep clone
+    if (val instanceof pTSAsset) {
+        const clonedAsset = val.clone();
+        seen.set(val, clonedAsset);
+        return clonedAsset;
+    }
+
+    // Cocos math / objects with custom clone() method (Vec2, Vec3, Color, Rect, Size, Quat, Mat4, etc.)
+    if (typeof val.clone === 'function') {
+        try {
+            const clonedMath = val.clone();
+            seen.set(val, clonedMath);
+            return clonedMath;
+        } catch {}
+    }
+
+    // Array
+    if (Array.isArray(val)) {
+        const clonedArr: any[] = [];
+        seen.set(val, clonedArr);
+        for (let i = 0; i < val.length; i++) {
+            clonedArr[i] = _$cloneValue(val[i], seen, depth + 1);
+        }
+        return clonedArr;
+    }
+
+    // Set
+    if (val instanceof Set) {
+        const clonedSet = new Set();
+        seen.set(val, clonedSet);
+        for (const item of val) {
+            clonedSet.add(_$cloneValue(item, seen, depth + 1));
+        }
+        return clonedSet;
+    }
+
+    // Map
+    if (val instanceof Map) {
+        const clonedMap = new Map();
+        seen.set(val, clonedMap);
+        for (const [k, v] of val) {
+            clonedMap.set(k, _$cloneValue(v, seen, depth + 1));
+        }
+        return clonedMap;
+    }
+
+    // Non-pTSAsset Cocos Assets (textures, prefabs, materials), Scene Nodes, and Components
+    // are shared by reference, not duplicated.
+    if (val instanceof Asset || (val && typeof val === 'object' && ('_objFlags' in val && '_parent' in val))) {
+        return val;
+    }
+
+    // Plain object
+    try {
+        const proto = Object.getPrototypeOf(val);
+        const clonedObj: any = proto && proto !== Object.prototype ? Object.create(proto) : {};
+        seen.set(val, clonedObj);
+        for (const key of Object.keys(val)) {
+            if (key.startsWith('_$') || key.startsWith('_driver')) continue;
+            clonedObj[key] = _$cloneValue(val[key], seen, depth + 1);
+        }
+        return clonedObj;
+    } catch {
+        return val;
+    }
+}
+
+function _getPropertyDescriptor(obj: any, prop: string): PropertyDescriptor | undefined {
+    let cur = obj;
+    while (cur && cur !== Object.prototype && cur !== Asset.prototype) {
+        const desc = Object.getOwnPropertyDescriptor(cur, prop);
+        if (desc) return desc;
+        cur = Object.getPrototypeOf(cur);
+    }
+    return undefined;
+}
+
+function _$deepCloneProperties(src: any, dst: any): void {
+    const seen = new Map<any, any>();
+    seen.set(src, dst);
+
+    const ctor = src.constructor;
+    const skippedKeys = new Set([
+        '_uuid', 'uuid', 'name', '_objFlags', '_ref',
+        '_driver', '_isLoaded', '_rawFiles', '_native', '_nativeUrl', '_file',
+    ]);
+
+    const keysToCopy = new Set<string>();
+
+    // 1. Own property names
+    for (const k of Object.getOwnPropertyNames(src)) {
+        if (k.startsWith('_driver') || skippedKeys.has(k) || k.startsWith('_$')) continue;
+        keysToCopy.add(k);
+    }
+
+    // 2. CCClass registered properties
+    if (ctor && Array.isArray((ctor as any).__props__)) {
+        for (const p of (ctor as any).__props__) {
+            if (p.startsWith('_driver') || skippedKeys.has(p) || p.startsWith('_$')) continue;
+            keysToCopy.add(p);
+        }
+    }
+
+    // 3. Editor properties
+    const editorProps = (ctor && (ctor as any).__editor_props__) || src.__editor_props__;
+    if (editorProps && typeof editorProps === 'object') {
+        for (const ep of Object.keys(editorProps)) {
+            if (ep.startsWith('_driver') || skippedKeys.has(ep) || ep.startsWith('_$')) continue;
+            keysToCopy.add(ep);
+        }
+    }
+
+    // 4. Copy each property
+    for (const key of keysToCopy) {
+        try {
+            const desc = _getPropertyDescriptor(src, key);
+            // Getter-only on prototype without setter: copy backing field if exists
+            if (desc && desc.get && !desc.set) {
+                const backingKey = '_' + key;
+                if (backingKey in src) {
+                    (dst as any)[backingKey] = _$cloneValue((src as any)[backingKey], seen);
+                }
+                continue;
+            }
+
+            const val = src[key];
+            if (typeof val === 'function') continue;
+
+            const clonedVal = _$cloneValue(val, seen);
+            (dst as any)[key] = clonedVal;
+
+            // Sync backing field if exists
+            const backingKey = '_' + key;
+            if (backingKey in dst && !(backingKey in src)) {
+                try {
+                    (dst as any)[backingKey] = clonedVal;
+                } catch {}
+            }
+        } catch {
+            // Ignore unassignable properties
         }
     }
 }
