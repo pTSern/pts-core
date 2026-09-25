@@ -133,7 +133,7 @@ function _emit<_TArg extends any[] = any[], _TReturn = any>(_func: pFlex.IBinder
     return !!binder ? func.call(binder, ..._params) : func(..._params)
 }
 
-export function emit<_TArg extends any[] = any[], _TReturn = any>(funcs: pFlex.TArray<pFlex.IBinder<_TArg>>, ...params: _TArg): any[] {
+export function emit<_TArg extends any[] = any[], _TReturn = any>(funcs: pFlex.TArray<pFlex.IBinder<_TArg>> | Set<pFlex.IBinder<_TArg>>, ...params: _TArg): any[] {
     if (!funcs) return [];
 
     const out = []
@@ -141,9 +141,8 @@ export function emit<_TArg extends any[] = any[], _TReturn = any>(funcs: pFlex.T
         for(const _func of funcs) {
             out.push(_emit(_func, params))
         }
-    } else {
-        out.push(_emit(funcs, params))
-    }
+    } else if(funcs instanceof Set) funcs.forEach(_func => out.push(_emit(_func, params)))
+    else out.push(_emit(funcs, params))
 
     return out;
 }
