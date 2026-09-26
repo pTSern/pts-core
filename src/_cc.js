@@ -197,7 +197,7 @@ function _enrichDumpWithGetters(dump, ctor) {
     if (!dump || !dump.value || !ctor) return;
     const gettersInfo = _getGettersOfClass(ctor);
     for (const g in gettersInfo) {
-        if (dump.value[g]) {
+        if (dump.value[g] && typeof dump.value[g] === 'object') {
             dump.value[g].isGetter = true;
             if (gettersInfo[g].hasSetter) {
                 dump.value[g].hasSetter = true;
@@ -1156,8 +1156,12 @@ function _enrichDumpWithEditorProps(dump, instance, ctor) {
         // Defensive check: only include properties that actually exist on this instance or ctor prototype
         const exists = _hasProperty(instance, key) || (ctor.prototype && _hasProperty(ctor.prototype, key));
         if (!exists) continue;
-
-        const rawVal = instance ? instance[key] : undefined;
+        let rawVal = undefined;
+        try {
+            rawVal = instance ? instance[key] : undefined;
+        } catch (e) {
+            // Getter might fail on uninitialized state in editor
+        }
         if (!dump.value[key]) {
             let typeName = 'Unknown';
             if (meta.type) {
