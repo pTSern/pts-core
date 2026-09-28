@@ -28,6 +28,7 @@ export class Handler<__TInterfaces_ extends Record<string, any>> implements IDri
     public declare once: IDriver<__TInterfaces_>['once'];
     public declare off: IDriver<__TInterfaces_>['off'];
     public declare clear: IDriver<__TInterfaces_>['clear'];
+    public declare flush: IDriver<__TInterfaces_>['flush'];
 
     protected __waiters_: Map<keyof __TInterfaces_, _IResolver> = new Map();
 
