@@ -6,6 +6,7 @@ declare namespace pTS {
             once<_TKey extends keyof __TInterfaces_>(key: _TKey, ...funcs: pFlex.THandler<Parameters<__TInterfaces_[_TKey]>, void>[]): void;
             off<_TKey extends keyof __TInterfaces_>(key: _TKey, ...funcs: pFlex.THandler<Parameters<__TInterfaces_[_TKey]>, void>[]): void;
             clear(key: keyof __TInterfaces_): void;
+            flush(): void;
         }
 
         export interface IDriver<__TInterfaces_ extends Record<string, any>> extends _IListener<__TInterfaces_> {

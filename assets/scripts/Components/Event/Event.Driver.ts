@@ -144,6 +144,10 @@ export class Event_Driver<_TInterfaces extends Record<string, any>> extends Shar
         return this.target.clear(this._$key(key))
     }
 
+    flush(): void {
+        return this.target.flush();
+    }
+
 }
 
 export namespace Event_Driver {
