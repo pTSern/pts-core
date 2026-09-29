@@ -1,5 +1,5 @@
 import { _decorator, CCInteger, EventHandler, JsonAsset } from 'cc';
-import { pEngine } from '../../utils';
+import { pArray, pClass, pEngine } from '../../utils';
 import { editor_property } from '../../utils/pClass';
 import { pTSAsset_Emitter, pTSAsset_Handler } from '../../pTSAsset/pTSAsset.Event';
 
@@ -31,6 +31,7 @@ export class Event_Flexer<_TInterfaces extends Record<string, any> = { event: pF
     @editor_property()
     protected _emitted: number = 0;
 
+    protected _binders: Set<pFlex.IBinder> = new Set();
     emit(...args: any[]) {
         this._emitted++;
         const _out = this.isJsonFirst ? [
@@ -43,6 +44,7 @@ export class Event_Flexer<_TInterfaces extends Record<string, any> = { event: pF
 
         this.emmiter.forEach(_pTS => _out.push(_pTS.emit(...args)));
         this.handler.forEach(_pTS => _out.push(_pTS.emit(...args)));
+        pClass.emit(this._binders, ...args);
 
         if(this.intMaxEmitCount > 0 && this._emitted >= this.intMaxEmitCount) {
             this.handlers = [];
@@ -55,8 +57,27 @@ export class Event_Flexer<_TInterfaces extends Record<string, any> = { event: pF
         return _out;
     }
 
+    purge() {
+        this.handlers = [];
+        this.json = []
+        this.emmiter = []
+        this.handler = []
+        this._emitted = 0;
+        this._binders.clear();
+    }
+
     empty() {
         return this.handlers.length <= 0 && this.json.length <= 0
+    }
+
+    add(handler: pFlex.TArray<pFlex.THandler>, ...handles: pFlex.THandler[]) {
+        handles = pArray.flatter(handler, ...handles);
+        pClass.mapper(handles).forEach(_handle => this._binders.add(_handle));
+    }
+
+    remove(handler: pFlex.TArray<pFlex.THandler>, ...handles: pFlex.THandler[]) {
+        handles = pArray.flatter(handler, ...handles);
+        pClass.mapper(handles).forEach(_handle => this._binders.delete(_handle));
     }
 
 }

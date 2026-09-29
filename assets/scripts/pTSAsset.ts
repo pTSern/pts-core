@@ -4,10 +4,10 @@ import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
 import { IS_TEST } from "./utils/pConst";
 import { pArray, pString } from "./utils";
-import { editor_property, implement, imps } from "./utils/pClass";
+import { editor_property, implement, imps, getComponent } from "./utils/pClass";
 import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
 
-export { implement, imps };
+export { implement, imps, getComponent };
 
 const { ccclass } = _decorator;
 
