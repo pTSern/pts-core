@@ -132,9 +132,22 @@ export class Pooler_Node extends NodePool {
         }
 
         this.__pool_.length = _reach;
-
         return _arr;
+    }
 
+    override get(...args: any[]): Node | null {
+        while (this.__pool_.length > 0) {
+            const node = super.get(...args);
+            if (node && node.isValid) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    override put(node: Node): void {
+        if (!node || !node.isValid) return;
+        super.put(node);
     }
 }
 
