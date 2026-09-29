@@ -1,5 +1,5 @@
 
-import { js, Component, director, _decorator } from "cc";
+import { js, Component, Node, director, _decorator } from "cc";
 import { DEV, EDITOR, EDITOR_NOT_IN_PREVIEW } from "cc/env";
 import * as pArray from "./pArray";
 import * as pConst from "./pConst";
@@ -389,14 +389,22 @@ export function hookJsIsChildClassOf(): void {
     } catch {}
 }
 
-export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Function, targetClass: pFlex.TCtorFlex<any, any> | Function): boolean {
-    if (typeof superClass !== 'function' || typeof targetClass !== 'function') return false;
-    if (targetClass === superClass) return true;
+export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Function | string, targetClass: pFlex.TCtorFlex<any, any> | Function): boolean {
+    if (!superClass || typeof targetClass !== 'function') return false;
+    let actualSuper: any = superClass;
+    let superName = '';
+    if (typeof superClass === 'string') {
+        superName = superClass;
+        actualSuper = js.getClassByName(superClass);
+    } else {
+        superName = js.getClassName(superClass as any) || (superClass as any).name;
+    }
+
+    if (actualSuper && targetClass === actualSuper) return true;
     try {
-        if (targetClass.prototype instanceof superClass) return true;
+        if (actualSuper && targetClass.prototype instanceof actualSuper) return true;
     } catch {}
 
-    const superName = js.getClassName(superClass as any) || (superClass as any).name;
     let cur: any = targetClass;
     const visited = new Set<any>();
 
@@ -405,14 +413,14 @@ export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Functi
         const impls: any = cur[_$Keys.IMPL] || cur['__pTS_implements__'];
         if (impls) {
             if (impls instanceof Set) {
-                if (impls.has(superClass) || (superName && impls.has(superName))) return true;
+                if ((actualSuper && impls.has(actualSuper)) || (superName && impls.has(superName))) return true;
                 for (const contract of impls) {
                     if (typeof contract === 'function' && isImplementedFrom(superClass, contract)) {
                         return true;
                     }
                 }
             } else if (Array.isArray(impls)) {
-                if (impls.includes(superClass) || (superName && impls.includes(superName))) return true;
+                if ((actualSuper && impls.includes(actualSuper)) || (superName && impls.includes(superName))) return true;
                 for (const contract of impls) {
                     if (typeof contract === 'function' && isImplementedFrom(superClass, contract)) {
                         return true;
@@ -420,7 +428,7 @@ export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Functi
                 }
             } else if (typeof impls === 'object') {
                 //@ts-ignore
-                if (impls[superName] || (superClass in impls)) return true;
+                if ((superName && impls[superName]) || (actualSuper && actualSuper in impls)) return true;
                 for (const key of Object.keys(impls)) {
                     const c = js.getClassByName(key);
                     if (c && isImplementedFrom(superClass, c)) return true;
@@ -645,4 +653,167 @@ export function getInheritedClasses<_TClass>(superClass: pFlex.TCtor<any, _TClas
         return isMatch;
     });
 }
+
+// --- Component Retrieval with @implement Support ---
+
+function _resolveNode(nodeOrComp: Node | Component | null | undefined): Node | null {
+    if (!nodeOrComp) return null;
+    if (nodeOrComp instanceof Node) return nodeOrComp;
+    if (nodeOrComp instanceof Component) return nodeOrComp.node;
+    if ((nodeOrComp as any).node instanceof Node) return (nodeOrComp as any).node;
+    return null;
+}
+
+/**
+ * Checks whether a component implements or inherits from the specified class or contract.
+ */
+export function isComponentOfContract(
+    comp: Component | null | undefined,
+    classOrContract: pFlex.TCtor<any, any> | pFlex.TCtorFlex<any, any> | (new (...args: any[]) => any) | Function | string
+): boolean {
+    if (!comp || !classOrContract) return false;
+    const compCtor = comp.constructor as any;
+    if (!compCtor) return false;
+
+    if (typeof classOrContract === 'function') {
+        if (compCtor === classOrContract) return true;
+        try {
+            if (comp instanceof (classOrContract as any)) return true;
+        } catch {}
+        if (isImplementedFrom(classOrContract, compCtor)) return true;
+    } else if (typeof classOrContract === 'string') {
+        const className = js.getClassName(compCtor) || compCtor.name;
+        if (className === classOrContract) return true;
+
+        const resolvedCtor = js.getClassByName(classOrContract);
+        if (resolvedCtor) {
+            if (compCtor === resolvedCtor) return true;
+            try {
+                if (comp instanceof resolvedCtor) return true;
+            } catch {}
+            if (isImplementedFrom(resolvedCtor, compCtor)) return true;
+        }
+
+        const impls: any = compCtor[_$Keys.IMPL] || compCtor['__pTS_implements__'];
+        if (impls) {
+            if (impls instanceof Set && impls.has(classOrContract)) return true;
+            if (Array.isArray(impls) && impls.includes(classOrContract)) return true;
+            if (typeof impls === 'object' && classOrContract in impls) return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Resolves a component from a Node or Component that matches a class or contract.
+ * Supports standard inheritance as well as `@implement(Contract)` contracts.
+ * 
+ * @example
+ * ```ts
+ * @ccclass('Base')
+ * export class Base {}
+ * 
+ * @ccclass('Comp')
+ * @implement(Base)
+ * export class Comp extends Component implements Base {}
+ * 
+ * pClass.getComponent(node, Base); // Returns Comp instance
+ * ```
+ */
+export function getComponent<T = any>(
+    nodeOrComp: Node | Component | null | undefined,
+    classOrContract: pFlex.TCtor<any, T> | pFlex.TCtorFlex<any, T> | (new (...args: any[]) => T) | Function | string
+): T | null {
+    if (!nodeOrComp || !classOrContract) return null;
+    const node = _resolveNode(nodeOrComp);
+    if (!node) return null;
+
+    if (typeof classOrContract === 'function' && (classOrContract === Component || classOrContract.prototype instanceof Component)) {
+        const native = node.getComponent(classOrContract as any);
+        if (native) return native as unknown as T;
+    }
+
+    const comps: readonly Component[] = (node as any).components || (node as any)._components || node.getComponents(Component) || [];
+    for (let i = 0; i < comps.length; i++) {
+        const comp = comps[i];
+        if (isComponentOfContract(comp, classOrContract)) {
+            return comp as unknown as T;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Resolves all components from a Node or Component that match a class or contract.
+ */
+export function getComponents<T = any>(
+    nodeOrComp: Node | Component | null | undefined,
+    classOrContract: pFlex.TCtor<any, T> | pFlex.TCtorFlex<any, T> | (new (...args: any[]) => T) | Function | string
+): T[] {
+    if (!nodeOrComp || !classOrContract) return [];
+    const node = _resolveNode(nodeOrComp);
+    if (!node) return [];
+
+    const result: T[] = [];
+    const comps: readonly Component[] = (node as any).components || (node as any)._components || node.getComponents(Component) || [];
+    for (let i = 0; i < comps.length; i++) {
+        const comp = comps[i];
+        if (isComponentOfContract(comp, classOrContract)) {
+            result.push(comp as unknown as T);
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Resolves the first component in a Node or any of its descendants that matches a class or contract.
+ */
+export function getComponentInChildren<T = any>(
+    nodeOrComp: Node | Component | null | undefined,
+    classOrContract: pFlex.TCtor<any, T> | pFlex.TCtorFlex<any, T> | (new (...args: any[]) => T) | Function | string
+): T | null {
+    if (!nodeOrComp || !classOrContract) return null;
+    const node = _resolveNode(nodeOrComp);
+    if (!node) return null;
+
+    const selfComp = getComponent<T>(node, classOrContract);
+    if (selfComp) return selfComp;
+
+    const children = node.children || [];
+    for (let i = 0; i < children.length; i++) {
+        const childComp = getComponentInChildren<T>(children[i], classOrContract);
+        if (childComp) return childComp;
+    }
+
+    return null;
+}
+
+/**
+ * Resolves all components in a Node and its descendants that match a class or contract.
+ */
+export function getComponentsInChildren<T = any>(
+    nodeOrComp: Node | Component | null | undefined,
+    classOrContract: pFlex.TCtor<any, T> | pFlex.TCtorFlex<any, T> | (new (...args: any[]) => T) | Function | string,
+    out: T[] = []
+): T[] {
+    if (!nodeOrComp || !classOrContract) return out;
+    const node = _resolveNode(nodeOrComp);
+    if (!node) return out;
+
+    const selfComps = getComponents<T>(node, classOrContract);
+    for (let i = 0; i < selfComps.length; i++) {
+        out.push(selfComps[i]);
+    }
+
+    const children = node.children || [];
+    for (let i = 0; i < children.length; i++) {
+        getComponentsInChildren<T>(children[i], classOrContract, out);
+    }
+
+    return out;
+}
+
 
