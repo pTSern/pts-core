@@ -643,10 +643,12 @@ NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.T
 NodeUtils.create = function(opt, configs?) {
     let node = null
     if(opt.pool) {
-        node = opt.pool.get();
+        do {
+            node = opt.pool.get();
+        } while (node && !node.isValid);
     }
 
-    if(!node) {
+    if(!node || !node.isValid) {
         node = opt.fab ? Array.isArray(opt.fab) ? instantiate(pMath.rand(opt.fab)) : instantiate(opt.fab) : new Node();
     }
 
