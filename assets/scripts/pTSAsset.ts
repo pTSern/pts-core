@@ -141,6 +141,17 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
         return this._driver.emit(type, ..._params);
     }
 
+    clear<_TKey extends keyof _TInterfaces>(key: pFlex.TArray<_TKey>, ...keys: _TKey[]) {
+        keys = pArray.flat(key, keys);
+        for(const _key of keys) {
+            this._driver.clear(_key);
+        }
+    }
+
+    flush() {
+        this._driver.flush();
+    }
+
     destroy(): boolean {
         if (!BUILD && pConst.EDITOR_ONLY_IN_PREVIEW) {
             const rawUuid = (this as any)._uuid || this.uuid;
