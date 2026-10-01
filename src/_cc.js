@@ -2133,5 +2133,24 @@ exports.methods = {
         } catch (err) {
             return { success: false, error: err.message };
         }
+    },
+
+    reloadExtension(pkgName) {
+        try {
+            const name = pkgName || 'pts-asset';
+            console.log('[pTS-Core] Reloading extension: ' + name + ', typeof Editor: ' + (typeof Editor));
+            if (typeof Editor !== 'undefined' && Editor.Message) {
+                Editor.Message.request('extension', 'reload', name).then(() => {
+                    console.log('[pTS-Core] Extension reload successful: ' + name);
+                }).catch((err) => {
+                    console.log('[pTS-Core] request extension reload error:', err);
+                });
+                Editor.Message.send(name, 'reload');
+                return { success: true, message: 'Reload request sent for ' + name };
+            }
+            return { success: false, error: 'Editor.Message not available' };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
     }
 };
