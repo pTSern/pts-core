@@ -173,7 +173,7 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
         this._unbind();
         this._onPreSafeDestroy?.();
 
-        misc.callInNextTick( () => this.destroy());
+        misc.callInNextTick( () => this.isValid && this.destroy());
     }
 
     protected _onPreSafeDestroy?(): void
