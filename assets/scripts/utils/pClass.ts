@@ -533,6 +533,7 @@ export function implement<TContracts extends (pFlex.TCtorFlex<any, any> | pFlex.
     ...contracts: TContracts
 ) {
     hookJsIsChildClassOf();
+    hookNodeGetComponent();
 
     const flatContracts: any[] = pArray.flatter(contracts);
 
@@ -730,7 +731,7 @@ export function getComponent<T = any>(
     if (!node) return null;
 
     if (typeof classOrContract === 'function' && (classOrContract === Component || classOrContract.prototype instanceof Component)) {
-        const native = node.getComponent(classOrContract as any);
+        const native = _origNodeGetComponent ? _origNodeGetComponent.call(node, classOrContract) : node.getComponent(classOrContract as any);
         if (native) return native as unknown as T;
     }
 
@@ -815,5 +816,207 @@ export function getComponentsInChildren<T = any>(
 
     return out;
 }
+
+let _hasHookedNodeGetComponent = false;
+let _origNodeGetComponent: Function | null = null;
+let _isResolvingContractComponent = false;
+
+export function hookNodeGetComponent(): void {
+    if (_hasHookedNodeGetComponent) return;
+    try {
+        if (typeof Node !== 'undefined' && Node.prototype) {
+            const origGetComponent = Node.prototype.getComponent;
+            if (!(origGetComponent as any)?.__pts_hooked__) {
+                _origNodeGetComponent = origGetComponent;
+                const hooked = function(this: Node, typeOrName: any) {
+                    const comp = origGetComponent.call(this, typeOrName);
+                    if (comp) return comp;
+                    if (_isResolvingContractComponent) return null;
+                    _isResolvingContractComponent = true;
+                    try {
+                        return getComponent(this, typeOrName);
+                    } finally {
+                        _isResolvingContractComponent = false;
+                    }
+                };
+                (hooked as any).__pts_hooked__ = true;
+                Node.prototype.getComponent = hooked as any;
+                _hasHookedNodeGetComponent = true;
+            }
+        }
+    } catch {}
+}
+
+let _hasHookedSceneFacade = false;
+let _lastPClassSearchTarget: any = null;
+let _lastPClassSearchTime = 0;
+
+function _enrichNodeTreeContractsTS(node: any): void {
+    if (!node) return;
+    if (Array.isArray(node.components)) {
+        const implKey = Symbol.for('__pTS_implements__');
+        node.components.forEach((comp: any) => {
+            if (!comp || !comp.type) return;
+            const ctor = js.getClassByName(comp.type);
+            if (!ctor) return;
+
+            let cur: any = ctor;
+            const visited = new Set();
+            comp.extends = Array.isArray(comp.extends) ? comp.extends : [];
+
+            while (cur && cur !== Object && cur !== Function && !visited.has(cur)) {
+                visited.add(cur);
+                const impls = cur[implKey] || cur.__pTS_implements__;
+                if (impls) {
+                    const addExt = (item: any) => {
+                        if (!item) return;
+                        const name = typeof item === 'string' ? item : (js.getClassName(item) || item.name);
+                        if (name && !comp.extends.includes(name)) {
+                            comp.extends.push(name);
+                        }
+                    };
+                    if (impls instanceof Set) {
+                        impls.forEach(addExt);
+                    } else if (Array.isArray(impls)) {
+                        impls.forEach(addExt);
+                    } else if (typeof impls === 'object') {
+                        Object.keys(impls).forEach(addExt);
+                    }
+                }
+                cur = Object.getPrototypeOf(cur);
+            }
+        });
+    }
+    if (Array.isArray(node.children)) {
+        node.children.forEach(_enrichNodeTreeContractsTS);
+    }
+}
+
+function _enrichNodeTreeForSearchTS(node: any, targetType: any): void {
+    if (!node) return;
+
+    if (Array.isArray(node.components) && node.components.length > 0) {
+        const virtualChildren: any[] = [];
+        const compsToRemove = new Set<any>();
+
+        // 1. Duplicate components of the exact same type
+        const typeGroups = new Map<string, any[]>();
+        for (const comp of node.components) {
+            if (!comp || !comp.type) continue;
+            if (!typeGroups.has(comp.type)) typeGroups.set(comp.type, []);
+            typeGroups.get(comp.type)!.push(comp);
+        }
+
+        for (const [type, comps] of typeGroups.entries()) {
+            if (comps.length > 1) {
+                comps.forEach((comp, idx) => {
+                    compsToRemove.add(comp);
+                    virtualChildren.push({
+                        name: `${node.name} [${type} #${idx + 1}]`,
+                        uuid: node.uuid,
+                        components: [comp],
+                        children: []
+                    });
+                });
+            }
+        }
+
+        // 2. Multiple components matching search target (contracts/subtypes)
+        if (targetType) {
+            const targetName = typeof targetType === 'string' ? targetType : (js.getClassName(targetType) || targetType.name);
+            const remainingComps = node.components.filter((c: any) => !compsToRemove.has(c));
+            const matchingComps = remainingComps.filter((c: any) => {
+                if (!c) return false;
+                if (c.type === targetName) return true;
+                if (Array.isArray(c.extends) && c.extends.includes(targetName)) return true;
+                return false;
+            });
+
+            if (matchingComps.length > 1) {
+                const subTypeCount = new Map<string, number>();
+                matchingComps.forEach((c: any) => {
+                    subTypeCount.set(c.type, (subTypeCount.get(c.type) || 0) + 1);
+                });
+                const subTypeIdx = new Map<string, number>();
+
+                matchingComps.forEach((comp: any) => {
+                    compsToRemove.add(comp);
+                    const totalForType = subTypeCount.get(comp.type) || 1;
+                    let label = `${node.name} [${comp.type}]`;
+                    if (totalForType > 1) {
+                        const curIdx = (subTypeIdx.get(comp.type) || 0) + 1;
+                        subTypeIdx.set(comp.type, curIdx);
+                        label = `${node.name} [${comp.type} #${curIdx}]`;
+                    }
+                    virtualChildren.push({
+                        name: label,
+                        uuid: node.uuid,
+                        components: [comp],
+                        children: []
+                    });
+                });
+            }
+        }
+
+        if (compsToRemove.size > 0) {
+            node.components = node.components.filter((c: any) => !compsToRemove.has(c));
+            node.children = Array.isArray(node.children) ? node.children : [];
+            node.children.push(...virtualChildren);
+        }
+    }
+
+    if (Array.isArray(node.children)) {
+        node.children.forEach(child => _enrichNodeTreeForSearchTS(child, targetType));
+    }
+}
+
+export function hookSceneFacadeManager(): void {
+    if (_hasHookedSceneFacade) return;
+    try {
+        const cce = (globalThis as any).cce;
+        if (!cce || !cce.SceneFacadeManager) return;
+        const mgr = cce.SceneFacadeManager;
+        const targets = [mgr];
+        if (mgr.constructor && mgr.constructor.prototype) {
+            targets.push(mgr.constructor.prototype);
+        }
+
+        targets.forEach(target => {
+            if (target && target.queryClasses && !target.queryClasses.__pts_hooked__) {
+                const origQueryClasses = target.queryClasses;
+                const hooked = async function(this: any, options: any, ...rest: any[]) {
+                    _lastPClassSearchTime = Date.now();
+                    _lastPClassSearchTarget = (options && options.extends) ? options.extends : null;
+                    return origQueryClasses.call(this, options, ...rest);
+                };
+                hooked.__pts_hooked__ = true;
+                target.queryClasses = hooked;
+            }
+
+            if (target && target.queryNodeTree && !target.queryNodeTree.__pts_hooked__) {
+                const origQueryNodeTree = target.queryNodeTree;
+                const hooked = async function(this: any, ...args: any[]) {
+                    const tree = await origQueryNodeTree.apply(this, args);
+                    if (tree) {
+                        _enrichNodeTreeContractsTS(tree);
+                        const isSearch = (Date.now() - _lastPClassSearchTime) < 2000;
+                        if (isSearch) {
+                            const target = _lastPClassSearchTarget;
+                            _lastPClassSearchTime = 0;
+                            _enrichNodeTreeForSearchTS(tree, target);
+                        }
+                    }
+                    return tree;
+                };
+                hooked.__pts_hooked__ = true;
+                target.queryNodeTree = hooked;
+                _hasHookedSceneFacade = true;
+            }
+        });
+    } catch {}
+}
+
+hookNodeGetComponent();
+hookSceneFacadeManager();
 
 
