@@ -1914,17 +1914,30 @@ exports.methods = {
             console.warn('[pTS-Core] pTSAsset not found in cc.js');
             return [];
         }
-        const list = ['pTSAsset'];
+        const entries = [];
+        const seen = new Set();
         const nameMap = cc.js._nameToClass || {};
         for (const name in nameMap) {
             const cls = nameMap[name];
             if (typeof cls === 'function' && cls !== baseCtor && isChildOfPtsAsset(cls, baseCtor)) {
-                if (!list.includes(name)) {
-                    list.push(name);
+                if (seen.has(name)) continue;
+                seen.add(name);
+
+                let menu = cls._pts_menu || cls.__menu__ || (typeof cls.menu === 'string' ? cls.menu : undefined);
+                if (!menu && typeof cc !== 'undefined' && cc.CCClass && cc.CCClass.Attr) {
+                    try {
+                        menu = cc.CCClass.Attr.getClassAttr(cls, '', 'menu');
+                    } catch {}
                 }
+                const hide = !!cls._pts_menu_hide;
+                entries.push({
+                    name: name,
+                    menu: typeof menu === 'string' ? menu : undefined,
+                    hide: hide
+                });
             }
         }
-        return list.sort();
+        return entries;
     },
 
     get_class_inheritance_chain(className) {
