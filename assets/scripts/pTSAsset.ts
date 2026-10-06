@@ -1,4 +1,4 @@
-import { __private, _decorator, Asset, Director, director, assetManager } from "cc";
+import { __private, _decorator, Asset, Director, director, assetManager, CCClass } from "cc";
 import { BUILD } from "cc/env";
 import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
@@ -6,6 +6,46 @@ import { IS_TEST } from "./utils/pConst";
 import { pArray, pString } from "./utils";
 import { editor_property, implement, imps, getComponent } from "./utils/pClass";
 import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
+
+export type TPtsMenuOption = string | { path: string; priority?: number; hide?: boolean } | boolean;
+
+/**
+ * Decorator to define the menu path for creating this pTSAsset in the Assets Create menu.
+ * Example: @pTSAsset.menu("A/B/C") or @menu("A/B/C")
+ */
+export function menu(menuOption: TPtsMenuOption) {
+    return function (target: any) {
+        if (!target) return target;
+        let menuPath: string | undefined = undefined;
+        let hide = false;
+        let priority: number | undefined = undefined;
+
+        if (typeof menuOption === 'string') {
+            menuPath = menuOption.trim();
+        } else if (typeof menuOption === 'boolean') {
+            hide = !menuOption;
+        } else if (menuOption && typeof menuOption === 'object') {
+            if (menuOption.hide) hide = true;
+            if (menuOption.path) menuPath = menuOption.path.trim();
+            if (typeof menuOption.priority === 'number') priority = menuOption.priority;
+        }
+
+        if (hide) {
+            target._pts_menu_hide = true;
+            target._pts_menu = '';
+        } else if (menuPath) {
+            target._pts_menu = menuPath;
+            target.__menu__ = menuPath;
+            if (priority !== undefined) target._pts_menu_priority = priority;
+            try {
+                if (typeof CCClass !== 'undefined' && CCClass.Attr) {
+                    CCClass.Attr.setClassAttr(target, '', 'menu', menuPath);
+                }
+            } catch {}
+        }
+        return target;
+    };
+}
 
 export { implement, imps, getComponent };
 
@@ -16,7 +56,12 @@ const _readyDeferredResolve_ = Symbol('_readyDeferredResolve_');
 const _readyDeferredPromise_ = Symbol('_readyDeferredPromise_');
 
 @ccclass("pTSAsset")
+@menu("Core/pTSAsset")
 export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
+    static menu(menuOption: TPtsMenuOption) {
+        return menu(menuOption);
+    }
+
     protected static _bounces: string[] = [];
     static CCEvents(target: pTSAsset) {
         if(!target) return [];
@@ -32,6 +77,12 @@ export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TF
 
     private [_readyDeferredResolve_]: (() => void) | null = null;
     private [_readyDeferredPromise_]: Promise<void> | null = null;
+
+    static clone<_T extends pTSAsset>(a: pFlex.TArray<_T>, ...b: _T[]): _T[] {
+        b = pArray.flat(a, b);
+
+        return b.map(_asset => _asset.clone());
+    }
 
     static add(assets: pFlex.TArray<pTSAsset>, func: pFlex.TArray<pFlex.THandler>, ...funcs: pFlex.THandler[]) {
         assets = pArray.flatter(assets);
