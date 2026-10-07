@@ -7,39 +7,39 @@ import { pArray, pString } from "./utils";
 import { editor_property, implement, imps, getComponent } from "./utils/pClass";
 import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
 
-export type TPtsMenuOption = string | { path: string; priority?: number; hide?: boolean } | boolean;
+export type pTS_TMenuOption = string | { path: string; priority?: number; hide?: boolean } | boolean;
 
 /**
  * Decorator to define the menu path for creating this pTSAsset in the Assets Create menu.
  * Example: @pTSAsset.menu("A/B/C") or @menu("A/B/C")
  */
-export function menu(menuOption: TPtsMenuOption) {
+export function menu(opt: pTS_TMenuOption) {
     return function (target: any) {
         if (!target) return target;
-        let menuPath: string | undefined = undefined;
-        let hide = false;
-        let priority: number | undefined = undefined;
+        let _paths: string | undefined = undefined;
+        let _hide = false;
+        let _priority: number | undefined = undefined;
 
-        if (typeof menuOption === 'string') {
-            menuPath = menuOption.trim();
-        } else if (typeof menuOption === 'boolean') {
-            hide = !menuOption;
-        } else if (menuOption && typeof menuOption === 'object') {
-            if (menuOption.hide) hide = true;
-            if (menuOption.path) menuPath = menuOption.path.trim();
-            if (typeof menuOption.priority === 'number') priority = menuOption.priority;
+        if (typeof opt === 'string') {
+            _paths = opt.trim();
+        } else if (typeof opt === 'boolean') {
+            _hide = !opt;
+        } else if (opt && typeof opt === 'object') {
+            if (opt.hide) _hide = true;
+            if (opt.path) _paths = opt.path.trim();
+            if (typeof opt.priority === 'number') _priority = opt.priority;
         }
 
-        if (hide) {
+        if (_hide) {
             target._pts_menu_hide = true;
             target._pts_menu = '';
-        } else if (menuPath) {
-            target._pts_menu = menuPath;
-            target.__menu__ = menuPath;
-            if (priority !== undefined) target._pts_menu_priority = priority;
+        } else if (_paths) {
+            target._pts_menu = _paths;
+            target.__menu__ = _paths;
+            if (_priority !== undefined) target._pts_menu_priority = _priority;
             try {
                 if (typeof CCClass !== 'undefined' && CCClass.Attr) {
-                    CCClass.Attr.setClassAttr(target, '', 'menu', menuPath);
+                    CCClass.Attr.setClassAttr(target, '', 'menu', _paths);
                 }
             } catch {}
         }
@@ -56,9 +56,8 @@ const _readyDeferredResolve_ = Symbol('_readyDeferredResolve_');
 const _readyDeferredPromise_ = Symbol('_readyDeferredPromise_');
 
 @ccclass("pTSAsset")
-@menu("Core/pTSAsset")
-export class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
-    static menu(menuOption: TPtsMenuOption) {
+export abstract class pTSAsset<_TInterfaces extends Record<string, any> = { any: pFlex.TFunc }> extends Asset {
+    static menu(menuOption: pTS_TMenuOption) {
         return menu(menuOption);
     }
 
