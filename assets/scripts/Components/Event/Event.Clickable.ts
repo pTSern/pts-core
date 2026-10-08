@@ -1,18 +1,21 @@
-import { __private, _decorator, Asset, Button, Component } from "cc";
+import { __private, _decorator, Button, Component } from "cc";
 import { implement, pTSAsset } from "../../utils";
-import { Handler } from "../../utils/pDriver";
 
 const { ccclass } = _decorator
 
 @ccclass('Event_Clickable')
-export abstract class Event_Clickable extends pTSAsset {
-    abstract onClick(btn: Button): void;
+export abstract class Event_Clickable {
+    abstract onClick(btn: Button): any
 }
 
 @implement(Event_Clickable)
-@ccclass('Test_Clickable')
-export class Test_Clickable extends pTSAsset implements Event_Clickable {
-    onClick(btn: Button): void {
-    }
+@ccclass('Event_ClickableAsset')
+export abstract class Event_ClickableAsset extends pTSAsset implements Event_Clickable {
+    abstract onClick(btn: Button): any
 }
 
+@implement(Event_Clickable)
+@ccclass('Event_ClickableComp')
+export abstract class Event_ClickableComp extends Component implements Event_Clickable {
+    abstract onClick(btn: Button): any
+}
