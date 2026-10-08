@@ -1,6 +1,7 @@
 import { Button, Component, JsonAsset, _decorator } from "cc";
 import { pConst, pEngine } from "../../utils";
 import { editor_property } from "../../utils/pClass";
+import { Event_Clickable } from "../Event/Event.Clickable";
 
 const { ccclass, property, requireComponent } = _decorator;
 
@@ -9,6 +10,9 @@ const { ccclass, property, requireComponent } = _decorator;
 export class Smart_Button extends Component {
     @property({ type: JsonAsset, group: pConst.GROUPS.EVENT })
     onClicks: JsonAsset[] = [];
+
+    @property({ type: Event_Clickable, group: pConst.GROUPS.EVENT })
+    clickers: Event_Clickable[] = [];
 
     @editor_property(undefined, { kill: true })
     protected get __$see() {
@@ -21,6 +25,10 @@ export class Smart_Button extends Component {
             return;
         }
         this.node.on(Button.EventType.CLICK, this._onClick, this);
+    }
+
+    protected onLoad(): void {
+        console.log(`Smart_Button: onLoad`, this.node.name, this.clickers);
     }
 
     protected onDestroy(): void {
