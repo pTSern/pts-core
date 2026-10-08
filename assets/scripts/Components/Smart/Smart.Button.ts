@@ -11,7 +11,7 @@ export class Smart_Button extends Component {
     @property({ type: JsonAsset, group: pConst.GROUPS.EVENT })
     onClicks: JsonAsset[] = [];
 
-    @property({ type: Event_Clickable, group: pConst.GROUPS.EVENT })
+    @property({ type: [Event_Clickable], group: pConst.GROUPS.EVENT })
     clickers: Event_Clickable[] = [];
 
     @editor_property(undefined, { kill: true })
