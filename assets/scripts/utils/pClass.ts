@@ -610,6 +610,194 @@ export function imps(...contracts: (pFlex.TCtorFlex<any, any> | pFlex.TCtor<any,
     return implement(...contracts);
 }
 
+export interface IImplementPropOptions {
+    displayName?: string;
+    tooltip?: string;
+    group?: any;
+    visible?: () => boolean;
+    mode?: 'all' | 'comp-only' | 'asset-only';
+}
+
+/**
+ * Decorates a property to accept any instance (either in-scene Component or AssetDB Asset)
+ * implementing the specified contract (abstract class / interface marked with @implement).
+ * 
+ * Synthesizes two mutually-exclusive backing fields (_prop_comp, _prop_asset) for native
+ * Cocos Creator serialization, and provides a direct getter/setter on the target property.
+ * 
+ * @example
+ * ```ts
+ * @implementProp(Base)
+ * base: Base = null;
+ * 
+ * start() {
+ *     this.base?.onClick();
+ * }
+ * ```
+ */
+export function implementProp<TContract extends Function>(
+    contract: TContract,
+    options?: IImplementPropOptions
+) {
+    return function (target: any, propertyKey: string) {
+        const compKey = `_${propertyKey}_comp`;
+        const assetKey = `_${propertyKey}_asset`;
+        const contractName = js.getClassName(contract) || (contract as any).name || 'Contract';
+        const label = options?.displayName || propertyKey;
+        const group = options?.group;
+        const mode = options?.mode || 'all';
+
+        // Hook hasInstance so instanceof checks work naturally
+        hookHasInstance(contract);
+
+        // 1. Register serialized backing property for in-scene Component
+        if (mode === 'all' || mode === 'comp-only') {
+            _decorator.property({
+                type: Component,
+                displayName: mode === 'all' ? `${label} (Comp)` : label,
+                tooltip: options?.tooltip || `In-scene Component implementing ${contractName}`,
+                group: group,
+                visible: function () {
+                    const userVis = options?.visible ? options.visible.call(this) : true;
+                    return userVis && (mode === 'comp-only' || !this[assetKey]);
+                }
+            })(target, compKey);
+        }
+
+        // 2. Register serialized backing property for AssetDB Asset
+        if (mode === 'all' || mode === 'asset-only') {
+            _decorator.property({
+                type: cc.Asset,
+                displayName: mode === 'all' ? `${label} (Asset)` : label,
+                tooltip: options?.tooltip || `Asset implementing ${contractName}`,
+                group: group,
+                visible: function () {
+                    const userVis = options?.visible ? options.visible.call(this) : true;
+                    return userVis && (mode === 'asset-only' || !this[compKey]);
+                }
+            })(target, assetKey);
+        }
+
+        // 3. Define getter and setter on target prototype for direct property access
+        Object.defineProperty(target, propertyKey, {
+            get: function () {
+                return (this[compKey] as any) || (this[assetKey] as any) || null;
+            },
+            set: function (val: any) {
+                if (!val) {
+                    if (this[compKey] !== undefined) this[compKey] = null;
+                    if (this[assetKey] !== undefined) this[assetKey] = null;
+                    return;
+                }
+                if (val instanceof Component) {
+                    if (EDITOR || DEV) {
+                        const ctor = val.constructor;
+                        if (!isImplementedFrom(contract, ctor)) {
+                            console.warn(`[@implementProp] Component "${js.getClassName(ctor) || ctor.name}" does not implement contract "${contractName}".`);
+                        }
+                    }
+                    this[compKey] = val;
+                    if (this[assetKey] !== undefined) this[assetKey] = null;
+                } else if (val instanceof cc.Asset) {
+                    if (EDITOR || DEV) {
+                        const ctor = val.constructor;
+                        if (!isImplementedFrom(contract, ctor)) {
+                            console.warn(`[@implementProp] Asset "${js.getClassName(ctor) || ctor.name}" does not implement contract "${contractName}".`);
+                        }
+                    }
+                    this[assetKey] = val;
+                    if (this[compKey] !== undefined) this[compKey] = null;
+                } else {
+                    console.warn(`[@implementProp] Value assigned to "${propertyKey}" must extend Component or cc.Asset and implement "${contractName}".`);
+                }
+            },
+            enumerable: true,
+            configurable: true
+        });
+    };
+}
+
+export const impsProp = implementProp;
+export const iProp = implementProp;
+
+/**
+ * Universal polymorphic reference wrapper capable of holding either an in-scene Component
+ * or an AssetDB Asset implementing contract T.
+ * 
+ * Works seamlessly in nested CCClass structs and arrays (@property({ type: [pRef] })).
+ * 
+ * @example
+ * ```ts
+ * @property({ type: pRef })
+ * base: pRef<Base> = new pRef<Base>();
+ * 
+ * start() {
+ *     this.base.value?.onClick();
+ * }
+ * ```
+ */
+@_decorator.ccclass('pRef')
+export class pRef<T = any> {
+    @_decorator.property({
+        type: Component,
+        displayName: 'Component',
+        visible() { return !this.asset; }
+    })
+    comp: Component = null;
+
+    @_decorator.property({
+        type: cc.Asset,
+        displayName: 'Asset',
+        visible() { return !this.comp; }
+    })
+    asset: cc.Asset = null;
+
+    constructor(comp?: Component, asset?: cc.Asset) {
+        if (comp) this.comp = comp;
+        if (asset) this.asset = asset;
+    }
+
+    static create<T = any>(comp?: Component, asset?: cc.Asset): pRef<T> {
+        return new pRef<T>(comp, asset);
+    }
+
+    get value(): T | null {
+        return (this.comp as any) || (this.asset as any) || null;
+    }
+
+    get isAssigned(): boolean {
+        return !!(this.comp || this.asset);
+    }
+
+    get isComponent(): boolean {
+        return !!this.comp;
+    }
+
+    get isAsset(): boolean {
+        return !!this.asset;
+    }
+
+    set(val: T | Component | cc.Asset | null): void {
+        if (!val) {
+            this.comp = null;
+            this.asset = null;
+            return;
+        }
+        if (val instanceof Component) {
+            this.comp = val;
+            this.asset = null;
+        } else if (val instanceof cc.Asset) {
+            this.asset = val;
+            this.comp = null;
+        }
+    }
+
+    clear(): void {
+        this.comp = null;
+        this.asset = null;
+    }
+}
+
 export function persistent(opt: { key: string, initer?: string, destroyer?: string }) {
     return (constructor: pFlex.TCtor) => {
         let pool = _$Pool.get(constructor);
