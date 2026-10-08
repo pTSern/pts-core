@@ -4,7 +4,7 @@ import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
 import { IS_TEST } from "./utils/pConst";
 import { pArray, pString } from "./utils";
-import { editor_property, implement, imps, getComponent } from "./utils/pClass";
+import { editor_property, implement, imps, getComponent, implementProp, impsProp, iProp, pRef, IImplementPropOptions } from "./utils/pClass";
 import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
 
 export type pTS_TMenuOption = string | { path: string; priority?: number; hide?: boolean } | boolean;
@@ -47,7 +47,8 @@ export function menu(opt: pTS_TMenuOption) {
     };
 }
 
-export { implement, imps, getComponent };
+export { implement, imps, getComponent, implementProp, impsProp, iProp, pRef };
+export type { IImplementPropOptions };
 
 const { ccclass } = _decorator;
 
@@ -60,6 +61,11 @@ export abstract class pTSAsset<_TInterfaces extends Record<string, any> = { any:
     static menu(menuOption: pTS_TMenuOption) {
         return menu(menuOption);
     }
+
+    static implementProp = implementProp;
+    static impsProp = impsProp;
+    static iProp = iProp;
+    static pRef = pRef;
 
     protected static _bounces: string[] = [];
     static CCEvents(target: pTSAsset) {
