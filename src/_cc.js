@@ -149,6 +149,202 @@ function _getCCPropInfo(target, prop) {
 
 // ─── Helpers: Serialization & Dumper ───
 
+// ─── RealCurve Support Helpers ──────────────────────────────
+function _isRealCurve(val) {
+    if (!val || typeof val !== 'object') return false;
+    if (typeof cc !== 'undefined' && cc.RealCurve && val instanceof cc.RealCurve) return true;
+    const ctor = val.constructor;
+    if (!ctor) return false;
+    const ctorName = (typeof cc !== 'undefined' && cc.js && cc.js.getClassName(ctor)) || ctor.name;
+    return ctorName === 'cc.RealCurve' || ctorName === 'RealCurve';
+}
+
+function _isRealCurveProp(ctor, propName) {
+    if (!ctor) return false;
+    try {
+        const attr = typeof cc !== 'undefined' && cc.Class && cc.Class.attr(ctor, propName);
+        if (!attr) return false;
+        if (typeof cc !== 'undefined' && cc.RealCurve && (attr.type === cc.RealCurve || attr.ctor === cc.RealCurve)) return true;
+        const typeName = attr.type ? ((cc?.js?.getClassName && cc.js.getClassName(attr.type)) || attr.type.name) : '';
+        if (typeName === 'cc.RealCurve' || typeName === 'RealCurve') return true;
+    } catch {}
+    return false;
+}
+
+function _ensureRealCurveDefaultKeyframes(curve) {
+    if (!_isRealCurve(curve)) return;
+    const count = typeof curve.keyFramesCount === 'number'
+        ? curve.keyFramesCount
+        : (typeof curve.keyframes === 'function' ? [...curve.keyframes()].length : 0);
+    if (count === 0 && typeof curve.assignSorted === 'function') {
+        curve.assignSorted([
+            [0, {
+                value: 0,
+                leftTangent: 1,
+                rightTangent: 1,
+                interpolationMode: 0,
+                tangentWeightMode: 0,
+                leftTangentWeight: 1,
+                rightTangentWeight: 1
+            }],
+            [1, {
+                value: 1,
+                leftTangent: 1,
+                rightTangent: 1,
+                interpolationMode: 0,
+                tangentWeightMode: 0,
+                leftTangentWeight: 1,
+                rightTangentWeight: 1
+            }]
+        ]);
+    }
+    if (curve.preExtrapolation === undefined) curve.preExtrapolation = 1;
+    if (curve.postExtrapolation === undefined) curve.postExtrapolation = 1;
+}
+
+function _decodeCurveValue(curve, data) {
+    if (!_isRealCurve(curve)) {
+        if (typeof cc !== 'undefined' && cc.RealCurve) {
+            curve = new cc.RealCurve();
+        } else {
+            return curve;
+        }
+    }
+    if (!data || typeof data !== 'object') {
+        _ensureRealCurveDefaultKeyframes(curve);
+        return curve;
+    }
+
+    const raw = (data && typeof data === 'object' && '__value__' in data) ? data.__value__ : data;
+    if (!raw || typeof raw !== 'object') {
+        _ensureRealCurveDefaultKeyframes(curve);
+        return curve;
+    }
+
+    const keyFramesSource = raw.keyFrames || raw.keys || null;
+
+    if (Array.isArray(keyFramesSource) && keyFramesSource.length > 0) {
+        const sortedFrames = keyFramesSource.map(kf => {
+            const time = typeof kf.time === 'number' ? kf.time : (kf.point && typeof kf.point.x === 'number' ? kf.point.x : 0);
+            const value = typeof kf.value === 'number' ? kf.value : (kf.point && typeof kf.point.y === 'number' ? kf.point.y : 0);
+            const leftTangent = typeof kf.leftTangent === 'number' ? kf.leftTangent : (typeof kf.inTangent === 'number' ? kf.inTangent : 0);
+            const rightTangent = typeof kf.rightTangent === 'number' ? kf.rightTangent : (typeof kf.outTangent === 'number' ? kf.outTangent : 0);
+            const leftTangentWeight = typeof kf.leftTangentWeight === 'number' ? kf.leftTangentWeight : (typeof kf.inTangentWeight === 'number' ? kf.inTangentWeight : 1);
+            const rightTangentWeight = typeof kf.rightTangentWeight === 'number' ? kf.rightTangentWeight : (typeof kf.outTangentWeight === 'number' ? kf.outTangentWeight : 1);
+            const interpolationMode = typeof kf.interpolationMode === 'number' ? kf.interpolationMode : (typeof kf.interpMode === 'number' ? kf.interpMode : 0);
+            const tangentWeightMode = typeof kf.tangentWeightMode === 'number' ? kf.tangentWeightMode : 0;
+
+            return [time, {
+                value,
+                leftTangent,
+                rightTangent,
+                interpolationMode,
+                tangentWeightMode,
+                leftTangentWeight,
+                rightTangentWeight
+            }];
+        });
+
+        sortedFrames.sort((a, b) => a[0] - b[0]);
+        if (typeof curve.assignSorted === 'function') {
+            curve.assignSorted(sortedFrames);
+        }
+    } else if (Array.isArray(raw._times) && Array.isArray(raw._values) && raw._times.length > 0) {
+        const sortedFrames = [];
+        for (let i = 0; i < raw._times.length; i++) {
+            const time = raw._times[i];
+            const v = raw._values[i] || {};
+            sortedFrames.push([time, {
+                value: typeof v.value === 'number' ? v.value : 0,
+                leftTangent: typeof v.leftTangent === 'number' ? v.leftTangent : (typeof v.inTangent === 'number' ? v.inTangent : 0),
+                rightTangent: typeof v.rightTangent === 'number' ? v.rightTangent : (typeof v.outTangent === 'number' ? v.outTangent : 0),
+                leftTangentWeight: typeof v.leftTangentWeight === 'number' ? v.leftTangentWeight : (typeof v.inTangentWeight === 'number' ? v.inTangentWeight : 1),
+                rightTangentWeight: typeof v.rightTangentWeight === 'number' ? v.rightTangentWeight : (typeof v.outTangentWeight === 'number' ? v.outTangentWeight : 1),
+                interpolationMode: typeof v.interpolationMode === 'number' ? v.interpolationMode : (typeof v.interpMode === 'number' ? v.interpMode : 0),
+                tangentWeightMode: typeof v.tangentWeightMode === 'number' ? v.tangentWeightMode : 0
+            }]);
+        }
+        sortedFrames.sort((a, b) => a[0] - b[0]);
+        if (typeof curve.assignSorted === 'function') {
+            curve.assignSorted(sortedFrames);
+        }
+    } else {
+        _ensureRealCurveDefaultKeyframes(curve);
+    }
+
+    const preExtrap = typeof raw.preExtrapolation === 'number'
+        ? raw.preExtrapolation
+        : (typeof raw.preExtrap === 'number' ? raw.preExtrap : (typeof raw.preWrapMode === 'number' ? raw.preWrapMode : undefined));
+    if (preExtrap !== undefined) {
+        curve.preExtrapolation = preExtrap;
+    }
+
+    const postExtrap = typeof raw.postExtrapolation === 'number'
+        ? raw.postExtrapolation
+        : (typeof raw.postExtrap === 'number' ? raw.postExtrap : (typeof raw.postWrapMode === 'number' ? raw.postWrapMode : undefined));
+    if (postExtrap !== undefined) {
+        curve.postExtrapolation = postExtrap;
+    }
+
+    return curve;
+}
+
+function _serializeRealCurve(val) {
+    const keyFrames = (val && typeof val.keyframes === 'function') ? [...val.keyframes()].map(([time, kf]) => ({
+        time,
+        value: typeof kf.value === 'number' ? kf.value : 0,
+        inTangent: typeof kf.leftTangent === 'number' ? kf.leftTangent : 0,
+        outTangent: typeof kf.rightTangent === 'number' ? kf.rightTangent : 0,
+        inTangentWeight: typeof kf.leftTangentWeight === 'number' ? kf.leftTangentWeight : 1,
+        outTangentWeight: typeof kf.rightTangentWeight === 'number' ? kf.rightTangentWeight : 1,
+        interpMode: typeof kf.interpolationMode === 'number' ? kf.interpolationMode : 0,
+        tangentWeightMode: typeof kf.tangentWeightMode === 'number' ? kf.tangentWeightMode : 0
+    })) : [];
+
+    return {
+        __type__: 'cc.RealCurve',
+        __value__: {
+            preExtrapolation: (val && typeof val.preExtrapolation === 'number') ? val.preExtrapolation : 1,
+            postExtrapolation: (val && typeof val.postExtrapolation === 'number') ? val.postExtrapolation : 1,
+            keyFrames: keyFrames
+        }
+    };
+}
+
+function _ensureAllRealCurvesValid(obj, ctor = null, visited = new Set()) {
+    if (!obj || typeof obj !== 'object' || visited.has(obj)) return;
+    visited.add(obj);
+
+    if (_isRealCurve(obj)) {
+        _ensureRealCurveDefaultKeyframes(obj);
+        return;
+    }
+
+    if (Array.isArray(obj)) {
+        for (let i = 0; i < obj.length; i++) {
+            _ensureAllRealCurvesValid(obj[i], null, visited);
+        }
+        return;
+    }
+
+    const targetCtor = ctor || obj.constructor;
+    for (const k of Object.keys(obj)) {
+        if (k.startsWith('__')) continue;
+        const v = obj[k];
+        if (_isRealCurve(v)) {
+            _ensureRealCurveDefaultKeyframes(v);
+        } else if (_isRealCurveProp(targetCtor, k) || (v && typeof v === 'object' && (v.__type__ === 'cc.RealCurve' || v.__type__ === 'RealCurve' || Array.isArray(v.keyFrames) || Array.isArray(v.keys)))) {
+            if (typeof cc !== 'undefined' && cc.RealCurve) {
+                const newCurve = new cc.RealCurve();
+                _decodeCurveValue(newCurve, v);
+                obj[k] = newCurve;
+            }
+        } else if (v && typeof v === 'object') {
+            _ensureAllRealCurvesValid(v, null, visited);
+        }
+    }
+}
+
 function _toDumperData(target) {
     const _prop = _getCCPropsInfo(target);
     for (const _p in _prop) {
@@ -365,6 +561,29 @@ function _recoverUnknownDumpTypes(instance, dump, className, currentValues) {
                     item.extends = ['cc.Asset', 'pTSAsset', typeName];
                     const uuid = (currentValues?.[p]?.__value__?.uuid || currentValues?.[p]?.uuid || instance?.[p]?._uuid || instance?.[p]?.uuid || '');
                     item.value = { uuid };
+                } else if (typeName === 'cc.RealCurve' || typeName === 'RealCurve') {
+                    item.type = 'cc.RealCurve';
+                    item.extends = ['cc.RealCurve'];
+                    if (!item.value || !item.value.keyFrames) {
+                        const curveInst = instance?.[p];
+                        if (_isRealCurve(curveInst)) {
+                            _ensureRealCurveDefaultKeyframes(curveInst);
+                            item.value = {
+                                postExtrap: curveInst.postExtrapolation ?? 1,
+                                preExtrap: curveInst.preExtrapolation ?? 1,
+                                keyFrames: (typeof curveInst.keyframes === 'function') ? [...curveInst.keyframes()].map(([time, kf]) => ({
+                                    time,
+                                    value: typeof kf.value === 'number' ? kf.value : 0,
+                                    inTangent: typeof kf.leftTangent === 'number' ? kf.leftTangent : 0,
+                                    outTangent: typeof kf.rightTangent === 'number' ? kf.rightTangent : 0,
+                                    inTangentWeight: typeof kf.leftTangentWeight === 'number' ? kf.leftTangentWeight : 1,
+                                    outTangentWeight: typeof kf.rightTangentWeight === 'number' ? kf.rightTangentWeight : 1,
+                                    interpMode: typeof kf.interpolationMode === 'number' ? kf.interpolationMode : 0,
+                                    tangentWeightMode: typeof kf.tangentWeightMode === 'number' ? kf.tangentWeightMode : 0
+                                })) : []
+                            };
+                        }
+                    }
                 }
                 console.log(`[pTS-Core] Recovered Unknown dump type for ${className}.${p} -> ${typeName}`);
             }
@@ -503,7 +722,9 @@ function _serializeInstance(instance) {
             });
         } else if (val && typeof val === 'object') {
             const valCtor = val.constructor;
-            if (valCtor && valCtor !== Object) {
+            if (_isRealCurve(val)) {
+                result[p] = _serializeRealCurve(val);
+            } else if (valCtor && valCtor !== Object) {
                 const valTypeName = cc.js.getClassName(valCtor) || valCtor.name;
                 if (cc.js.isChildClassOf(valCtor, cc.Asset)) {
                     result[p] = {
@@ -552,12 +773,16 @@ function _serializeInstance(instance) {
             if (v instanceof Promise || v instanceof Map || v instanceof Set) continue;
 
             if (v && typeof v === 'object' && v.constructor && v.constructor !== Object && !Array.isArray(v)) {
-                const vCtor = v.constructor;
-                const vTypeName = cc.js.getClassName(vCtor) || vCtor.name;
-                result[k] = {
-                    __type__: vTypeName,
-                    __value__: _serializeInstance(v)
-                };
+                if (_isRealCurve(v)) {
+                    result[k] = _serializeRealCurve(v);
+                } else {
+                    const vCtor = v.constructor;
+                    const vTypeName = cc.js.getClassName(vCtor) || vCtor.name;
+                    result[k] = {
+                        __type__: vTypeName,
+                        __value__: _serializeInstance(v)
+                    };
+                }
             } else {
                 result[k] = v;
             }
@@ -613,6 +838,17 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
             }
 
             if (val && typeof val === 'object') {
+                if (_isRealCurve(instance[k]) || (instance.constructor && _isRealCurveProp(instance.constructor, k)) || val.__type__ === 'cc.RealCurve' || val.__type__ === 'RealCurve') {
+                    if (!instance[k] || !_isRealCurve(instance[k])) {
+                        if (typeof cc !== 'undefined' && cc.RealCurve) {
+                            instance[k] = new cc.RealCurve();
+                        }
+                    }
+                    if (_isRealCurve(instance[k])) {
+                        _decodeCurveValue(instance[k], val);
+                        continue;
+                    }
+                }
                 if (val.__type__) {
                     const subCtor = cc.js.getClassByName(val.__type__);
                     if (subCtor) {
@@ -721,6 +957,8 @@ function _getComponentDumpByName(className, currentValues) {
     } catch (err) {
         console.error(`[pTS-Core] Error in onFocusInEditor for ${className}:`, err);
     }
+
+    _ensureAllRealCurvesValid(instance, ctor);
 
     const n = {
         type: className,
@@ -1073,6 +1311,8 @@ function _dumpLiveInstance(instance, className) {
         Object.setPrototypeOf(ctor.prototype, cc.Object.prototype);
     }
 
+    _ensureAllRealCurvesValid(instance, ctor);
+
     // Stash dummy asset objects ({ _uuid, uuid }) so cce.Dump.encode doesn't produce 'Unknown'
     const stashedAssets = {};
     for (const k of Object.keys(instance)) {
@@ -1206,7 +1446,11 @@ function _extractLiveValues(instance, className) {
         try {
             const val = instance[p];
             if (typeof val === 'function' || val instanceof Promise || val instanceof Map || val instanceof Set) continue;
-            values[p] = val;
+            if (_isRealCurve(val)) {
+                values[p] = _serializeRealCurve(val);
+            } else {
+                values[p] = val;
+            }
         } catch {}
     }
     for (const k of Object.keys(instance)) {
@@ -1214,7 +1458,11 @@ function _extractLiveValues(instance, className) {
             try {
                 const val = instance[k];
                 if (typeof val === 'function' || val instanceof Promise || val instanceof Map || val instanceof Set) continue;
-                values[k] = val;
+                if (_isRealCurve(val)) {
+                    values[k] = _serializeRealCurve(val);
+                } else {
+                    values[k] = val;
+                }
             } catch {}
         }
     }
@@ -1881,6 +2129,25 @@ exports.methods = {
                         }
                     }
                     target[idx] = valToAssign;
+                } else if (_isRealCurve(target[propName]) || (target.constructor && _isRealCurveProp(target.constructor, propName)) || (newValue && (newValue.__type__ === 'cc.RealCurve' || Array.isArray(newValue.keyFrames) || Array.isArray(newValue.keys)))) {
+                    let curveInst = target[propName];
+                    if (!_isRealCurve(curveInst)) {
+                        if (typeof cc !== 'undefined' && cc.RealCurve) {
+                            curveInst = new cc.RealCurve();
+                            target[propName] = curveInst;
+                        }
+                    }
+                    if (_isRealCurve(curveInst)) {
+                        _decodeCurveValue(curveInst, newValue);
+                        const desc = _findPropertyDescriptor(target, propName);
+                        if (desc && typeof desc.set === 'function') {
+                            try {
+                                target[propName] = curveInst;
+                            } catch (e) {}
+                        }
+                    } else {
+                        target[propName] = newValue;
+                    }
                 } else if (Array.isArray(newValue)) {
                     // Array property was already populated with proper CCClass or Asset instances
                     // by _populateInstance(instance, currentValues). Only invoke setter if defined.
@@ -1905,7 +2172,7 @@ exports.methods = {
         if (target && (backingKey in target || target.hasOwnProperty(backingKey))) {
             try {
                 if (target[backingKey] === undefined || target[backingKey] === null || target[backingKey] === '') {
-                    target[backingKey] = newValue;
+                    target[backingKey] = _isRealCurve(target[propName]) ? target[propName] : newValue;
                 }
             } catch (e) {}
         }
@@ -2077,6 +2344,25 @@ exports.methods = {
                     }
                 }
                 target[idx] = valToAssign;
+            } else if (_isRealCurve(target[propName]) || (target.constructor && _isRealCurveProp(target.constructor, propName)) || (newValue && (newValue.__type__ === 'cc.RealCurve' || Array.isArray(newValue.keyFrames) || Array.isArray(newValue.keys)))) {
+                let curveInst = target[propName];
+                if (!_isRealCurve(curveInst)) {
+                    if (typeof cc !== 'undefined' && cc.RealCurve) {
+                        curveInst = new cc.RealCurve();
+                        target[propName] = curveInst;
+                    }
+                }
+                if (_isRealCurve(curveInst)) {
+                    _decodeCurveValue(curveInst, newValue);
+                    const desc = _findPropertyDescriptor(target, propName);
+                    if (desc && typeof desc.set === 'function') {
+                        try {
+                            target[propName] = curveInst;
+                        } catch (e) {}
+                    }
+                } else {
+                    target[propName] = newValue;
+                }
             } else if (Array.isArray(newValue)) {
                 const resolvedArr = [];
                 for (let i = 0; i < newValue.length; i++) {
@@ -2133,7 +2419,7 @@ exports.methods = {
         if (target && (backingKey in target || target.hasOwnProperty(backingKey))) {
             try {
                 if (target[backingKey] === undefined || target[backingKey] === null || target[backingKey] === '') {
-                    target[backingKey] = newValue;
+                    target[backingKey] = _isRealCurve(target[propName]) ? target[propName] : newValue;
                 }
             } catch (e) {}
         }
