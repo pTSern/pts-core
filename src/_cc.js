@@ -2746,5 +2746,503 @@ exports.methods = {
         } catch (err) {
             return { success: false, error: err.message };
         }
+    },
+
+    async gameTap(x, y, duration, origin) {
+        try {
+            const canvas = (typeof cc !== 'undefined' && cc.game && cc.game.canvas) ||
+                           (typeof document !== 'undefined' && document.querySelector('canvas'));
+            let canvasW = 1280;
+            let canvasH = 720;
+            if (canvas) {
+                canvasW = canvas.width || 1280;
+                canvasH = canvas.height || 720;
+            } else if (typeof cc !== 'undefined' && cc.view) {
+                const sz = cc.view.getCanvasSize ? cc.view.getCanvasSize() : cc.view.getVisibleSize();
+                if (sz) { canvasW = sz.width; canvasH = sz.height; }
+            }
+
+            let screenX = Number(x);
+            let screenY = Number(y);
+            if (screenX >= 0 && screenX <= 1 && screenY >= 0 && screenY <= 1) {
+                screenX = screenX * canvasW;
+                screenY = screenY * canvasH;
+            }
+
+            if (origin === 'top-left') {
+                screenY = canvasH - screenY;
+            }
+
+            const hits = [];
+
+            // 1. UI Hit-Testing & Direct Component Dispatch
+            if (typeof cc !== 'undefined' && cc.director) {
+                const scene = cc.director.getScene();
+                if (scene) {
+                    const uiTransforms = scene.getComponentsInChildren('cc.UITransform');
+                    if (uiTransforms && uiTransforms.length) {
+                        for (let i = uiTransforms.length - 1; i >= 0; i--) {
+                            const uiTransform = uiTransforms[i];
+                            const node = uiTransform.node;
+                            if (!node || !node.activeInHierarchy) continue;
+
+                            if (uiTransform.hitTest && uiTransform.hitTest(new cc.Vec2(screenX, screenY))) {
+                                hits.push(node.name);
+
+                                const btn = node.getComponent('cc.Button');
+                                if (btn && btn.interactable && btn.enabled) {
+                                    if (btn.clickEvents && btn.clickEvents.length) {
+                                        const touch = cc.Touch ? new cc.Touch(screenX, screenY, 0) : { getID: () => 0 };
+                                        const ev = cc.EventTouch ? new cc.EventTouch([touch], true, 'touch-end') : {};
+                                        cc.Component.EventHandler.emitEvents(btn.clickEvents, ev);
+                                    }
+                                }
+
+                                if (cc.Touch && cc.EventTouch) {
+                                    const touch = new cc.Touch(screenX, screenY, 0);
+                                    const evStart = new cc.EventTouch([touch], true, 'touch-start');
+                                    const evEnd = new cc.EventTouch([touch], true, 'touch-end');
+                                    evStart.touch = touch;
+                                    evEnd.touch = touch;
+                                    node.emit('touch-start', evStart);
+                                    node.emit('touch-end', evEnd);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Global Input Dispatch (cc.input)
+            if (typeof cc !== 'undefined' && cc.input) {
+                if (cc.EventMouse) {
+                    const mDown = new cc.EventMouse(cc.EventMouse.DOWN || 'mouse-down', true);
+                    mDown.setLocation(screenX, screenY);
+                    mDown.setButton(cc.EventMouse.BUTTON_LEFT || 0);
+                    if (typeof cc.input._dispatchMouseDownEvent === 'function') cc.input._dispatchMouseDownEvent(mDown);
+                    else cc.input.emit('mouse-down', mDown);
+
+                    const mUp = new cc.EventMouse(cc.EventMouse.UP || 'mouse-up', true);
+                    mUp.setLocation(screenX, screenY);
+                    mUp.setButton(cc.EventMouse.BUTTON_LEFT || 0);
+                    if (typeof cc.input._dispatchMouseUpEvent === 'function') cc.input._dispatchMouseUpEvent(mUp);
+                    else cc.input.emit('mouse-up', mUp);
+                }
+
+                if (cc.EventTouch && cc.Touch) {
+                    const touch = new cc.Touch(screenX, screenY, 0);
+                    const evStart = new cc.EventTouch([touch], true, 'touch-start');
+                    evStart.touch = touch;
+                    if (typeof cc.input._dispatchTouchEvent === 'function') cc.input._dispatchTouchEvent(evStart);
+                    else cc.input.emit('touch-start', evStart);
+
+                    const evEnd = new cc.EventTouch([touch], true, 'touch-end');
+                    evEnd.touch = touch;
+                    if (typeof cc.input._dispatchTouchEvent === 'function') cc.input._dispatchTouchEvent(evEnd);
+                    else cc.input.emit('touch-end', evEnd);
+                }
+            }
+
+            return {
+                success: true,
+                data: {
+                    x: Math.round(screenX),
+                    y: Math.round(screenY),
+                    canvasWidth: canvasW,
+                    canvasHeight: canvasH,
+                    hitNodes: hits
+                },
+                message: `Tap simulated at (${Math.round(screenX)}, ${Math.round(screenY)})` + (hits.length ? ` (hit: ${hits.join(', ')})` : '')
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    async gameSwipe(startX, startY, endX, endY, durationMs, stepsCount, origin) {
+        try {
+            const canvas = (typeof cc !== 'undefined' && cc.game && cc.game.canvas) ||
+                           (typeof document !== 'undefined' && document.querySelector('canvas'));
+            let canvasW = 1280;
+            let canvasH = 720;
+            if (canvas) {
+                canvasW = canvas.width || 1280;
+                canvasH = canvas.height || 720;
+            } else if (typeof cc !== 'undefined' && cc.view) {
+                const sz = cc.view.getCanvasSize ? cc.view.getCanvasSize() : cc.view.getVisibleSize();
+                if (sz) { canvasW = sz.width; canvasH = sz.height; }
+            }
+
+            let sx = Number(startX);
+            let sy = Number(startY);
+            let ex = Number(endX);
+            let ey = Number(endY);
+
+            if (sx >= 0 && sx <= 1 && sy >= 0 && sy <= 1) { sx *= canvasW; sy *= canvasH; }
+            if (ex >= 0 && ex <= 1 && ey >= 0 && ey <= 1) { ex *= canvasW; ey *= canvasH; }
+
+            if (origin === 'top-left') {
+                sy = canvasH - sy;
+                ey = canvasH - ey;
+            }
+
+            const steps = Math.max(2, Number(stepsCount) || 8);
+            const duration = Math.max(30, Number(durationMs) || 200);
+            const stepDelay = Math.floor(duration / steps);
+            const touchId = 1;
+
+            // TOUCH_START
+            if (typeof cc !== 'undefined' && cc.input) {
+                if (cc.EventTouch && cc.Touch) {
+                    const tStart = new cc.Touch(sx, sy, touchId);
+                    const evStart = new cc.EventTouch([tStart], true, 'touch-start');
+                    evStart.touch = tStart;
+                    if (typeof cc.input._dispatchTouchEvent === 'function') cc.input._dispatchTouchEvent(evStart);
+                    else cc.input.emit('touch-start', evStart);
+                }
+                if (cc.EventMouse) {
+                    const mDown = new cc.EventMouse(cc.EventMouse.DOWN || 'mouse-down', true);
+                    mDown.setLocation(sx, sy);
+                    mDown.setButton(cc.EventMouse.BUTTON_LEFT || 0);
+                    if (typeof cc.input._dispatchMouseDownEvent === 'function') cc.input._dispatchMouseDownEvent(mDown);
+                }
+            }
+
+            // Intermediate TOUCH_MOVE
+            for (let i = 1; i <= steps; i++) {
+                if (stepDelay > 0) {
+                    await new Promise(r => setTimeout(r, stepDelay));
+                }
+                const progress = i / steps;
+                const curX = sx + (ex - sx) * progress;
+                const curY = sy + (ey - sy) * progress;
+
+                if (typeof cc !== 'undefined' && cc.input) {
+                    if (cc.EventTouch && cc.Touch) {
+                        const tMove = new cc.Touch(curX, curY, touchId);
+                        const evMove = new cc.EventTouch([tMove], true, 'touch-move');
+                        evMove.touch = tMove;
+                        if (typeof cc.input._dispatchTouchEvent === 'function') cc.input._dispatchTouchEvent(evMove);
+                        else cc.input.emit('touch-move', evMove);
+                    }
+                    if (cc.EventMouse) {
+                        const mMove = new cc.EventMouse(cc.EventMouse.MOVE || 'mouse-move', true);
+                        mMove.setLocation(curX, curY);
+                        mMove.setButton(cc.EventMouse.BUTTON_LEFT || 0);
+                        if (typeof cc.input._dispatchMouseMoveEvent === 'function') cc.input._dispatchMouseMoveEvent(mMove);
+                    }
+                }
+            }
+
+            // TOUCH_END
+            if (typeof cc !== 'undefined' && cc.input) {
+                if (cc.EventTouch && cc.Touch) {
+                    const tEnd = new cc.Touch(ex, ey, touchId);
+                    const evEnd = new cc.EventTouch([tEnd], true, 'touch-end');
+                    evEnd.touch = tEnd;
+                    if (typeof cc.input._dispatchTouchEvent === 'function') cc.input._dispatchTouchEvent(evEnd);
+                    else cc.input.emit('touch-end', evEnd);
+                }
+                if (cc.EventMouse) {
+                    const mUp = new cc.EventMouse(cc.EventMouse.UP || 'mouse-up', true);
+                    mUp.setLocation(ex, ey);
+                    mUp.setButton(cc.EventMouse.BUTTON_LEFT || 0);
+                    if (typeof cc.input._dispatchMouseUpEvent === 'function') cc.input._dispatchMouseUpEvent(mUp);
+                }
+            }
+
+            return {
+                success: true,
+                data: {
+                    from: { x: Math.round(sx), y: Math.round(sy) },
+                    to: { x: Math.round(ex), y: Math.round(ey) },
+                    duration,
+                    steps
+                },
+                message: `Swipe simulated from (${Math.round(sx)}, ${Math.round(sy)}) to (${Math.round(ex)}, ${Math.round(ey)}) in ${duration}ms`
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    gameTapNode(target) {
+        try {
+            let node = findNodeByUuid(target);
+            if (!node) {
+                const scene = cc.director.getScene();
+                if (scene) {
+                    if (target.includes('/')) {
+                        node = scene.getChildByPath ? scene.getChildByPath(target) : null;
+                    }
+                    if (!node) {
+                        function search(n) {
+                            if (!n) return null;
+                            if (n.name === target) return n;
+                            if (n.children) {
+                                for (let i = 0; i < n.children.length; i++) {
+                                    const found = search(n.children[i]);
+                                    if (found) return found;
+                                }
+                            }
+                            return null;
+                        }
+                        node = search(scene);
+                    }
+                }
+            }
+
+            if (!node) {
+                return { success: false, error: 'Target node not found: ' + target };
+            }
+
+            let buttonTriggered = false;
+            const btn = node.getComponent('cc.Button');
+            if (btn && btn.interactable && btn.enabled) {
+                if (btn.clickEvents && btn.clickEvents.length) {
+                    const touch = cc.Touch ? new cc.Touch(0, 0, 0) : { getID: () => 0 };
+                    const ev = cc.EventTouch ? new cc.EventTouch([touch], true, 'touch-end') : {};
+                    cc.Component.EventHandler.emitEvents(btn.clickEvents, ev);
+                    buttonTriggered = true;
+                }
+            }
+
+            if (cc.Touch && cc.EventTouch) {
+                const touch = new cc.Touch(0, 0, 0);
+                const evStart = new cc.EventTouch([touch], true, 'touch-start');
+                const evEnd = new cc.EventTouch([touch], true, 'touch-end');
+                evStart.touch = touch;
+                evEnd.touch = touch;
+                node.emit('touch-start', evStart);
+                node.emit('touch-end', evEnd);
+            }
+
+            let worldPos = null;
+            const uiTransform = node.getComponent('cc.UITransform');
+            if (uiTransform) {
+                const wp = uiTransform.convertToWorldSpaceAR(cc.Vec3.ZERO);
+                worldPos = { x: Math.round(wp.x), y: Math.round(wp.y) };
+            }
+
+            return {
+                success: true,
+                data: {
+                    nodeName: node.name,
+                    nodeUuid: node.uuid || node._id,
+                    buttonTriggered,
+                    worldPosition: worldPos
+                },
+                message: `Clicked node "${node.name}"` + (buttonTriggered ? ' (triggered cc.Button click event)' : '')
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    async gameScreenshot(savePath, returnBase64, mode) {
+        try {
+            const fs = require('fs');
+            const path = require('path');
+
+            let dataUrl = '';
+            let captureWidth = 0;
+            let captureHeight = 0;
+
+            const useCamera = mode !== 'canvas';
+            if (useCamera && typeof cc !== 'undefined' && cc.director && cc.RenderTexture) {
+                try {
+                    const scene = cc.director.getScene();
+                    let camera = null;
+                    if (scene) {
+                        const canvasNode = scene.getChildByName('Canvas');
+                        const cameraNode = canvasNode ? canvasNode.getChildByName('$_camera') : null;
+                        if (cameraNode) {
+                            camera = cameraNode.getComponent('cc.Camera');
+                        }
+                        if (!camera) {
+                            const cameraComp = scene.getComponentInChildren('cc.Camera');
+                            if (cameraComp) camera = cameraComp;
+                        }
+                    }
+
+                    if (camera) {
+                        const w = 540;
+                        const h = 960;
+                        const rt = new cc.RenderTexture();
+                        rt.reset({ width: w, height: h });
+                        const oldTarget = camera.targetTexture;
+                        camera.targetTexture = rt;
+
+                        if (cc.director.tick && (typeof cc.game === 'undefined' || cc.game.isPaused())) {
+                            cc.director.tick(0.016);
+                        }
+
+                        camera.targetTexture = oldTarget;
+                        const pixels = rt.readPixels();
+
+                        if (pixels && pixels.length >= w * h * 4) {
+                            const flipped = new Uint8ClampedArray(w * h * 4);
+                            const rowSize = w * 4;
+                            for (let row = 0; row < h; row++) {
+                                const srcOffset = (h - 1 - row) * rowSize;
+                                const dstOffset = row * rowSize;
+                                flipped.set(pixels.subarray(srcOffset, srcOffset + rowSize), dstOffset);
+                            }
+
+                            if (typeof document !== 'undefined') {
+                                const offCanvas = document.createElement('canvas');
+                                offCanvas.width = w;
+                                offCanvas.height = h;
+                                const ctx = offCanvas.getContext('2d');
+                                const imgData = new ImageData(flipped, w, h);
+                                ctx.putImageData(imgData, 0, 0);
+                                dataUrl = offCanvas.toDataURL('image/png');
+                                captureWidth = w;
+                                captureHeight = h;
+                            }
+                        }
+                    }
+                } catch (cameraErr) {
+                    console.warn('[pts-core] Camera RenderTexture capture failed, falling back to canvas:', cameraErr);
+                }
+            }
+
+            if (!dataUrl) {
+                const canvas = (typeof cc !== 'undefined' && cc.game && cc.game.canvas) ||
+                               (typeof document !== 'undefined' && document.querySelector('canvas'));
+
+                if (!canvas) {
+                    return { success: false, error: 'Game canvas not found in scene execution context' };
+                }
+
+                captureWidth = canvas.width;
+                captureHeight = canvas.height;
+
+                await new Promise((resolve) => {
+                    if (typeof cc !== 'undefined' && cc.director) {
+                        const evt = cc.Director.EVENT_AFTER_DRAW || 'director_after_draw';
+                        const onDraw = () => {
+                            try {
+                                dataUrl = canvas.toDataURL('image/png');
+                            } catch (e) {}
+                            resolve();
+                        };
+                        cc.director.once(evt, onDraw);
+                        if (cc.director.tick && (typeof cc.game === 'undefined' || cc.game.isPaused())) {
+                            cc.director.tick(0.016);
+                        }
+                        setTimeout(() => {
+                            if (!dataUrl) {
+                                try { dataUrl = canvas.toDataURL('image/png'); } catch (e) {}
+                            }
+                            resolve();
+                        }, 500);
+                    } else {
+                        try { dataUrl = canvas.toDataURL('image/png'); } catch (e) {}
+                        resolve();
+                    }
+                });
+            }
+
+            if (!dataUrl || !dataUrl.startsWith('data:image/png;base64,')) {
+                return {
+                    success: false,
+                    error: 'Could not capture canvas buffer. Canvas might be drawing with preserveDrawingBuffer disabled.'
+                };
+            }
+
+            const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
+            const targetPath = savePath || path.join(process.cwd(), 'temp_game_screenshot.png');
+
+            fs.writeFileSync(targetPath, Buffer.from(base64Data, 'base64'));
+
+            return {
+                success: true,
+                data: {
+                    filePath: targetPath,
+                    width: captureWidth,
+                    height: captureHeight,
+                    base64: returnBase64 ? base64Data : undefined,
+                    fileSize: (base64Data.length * 0.75) | 0
+                },
+                message: `Screenshot saved to ${targetPath} (${captureWidth}x${captureHeight})`
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    gameQueryState(evalExpr, includeUiNodes) {
+        try {
+            const scene = cc.director.getScene();
+            const sceneName = scene ? scene.name : 'Unknown';
+
+            const canvas = (typeof cc !== 'undefined' && cc.game && cc.game.canvas) ||
+                           (typeof document !== 'undefined' && document.querySelector('canvas'));
+            const canvasInfo = canvas ? { width: canvas.width, height: canvas.height } : null;
+
+            let evalResult = undefined;
+            if (evalExpr && typeof evalExpr === 'string') {
+                try {
+                    evalResult = eval(evalExpr);
+                } catch (evalErr) {
+                    evalResult = { error: evalErr.message };
+                }
+            }
+
+            const buttons = [];
+            if (includeUiNodes !== false && scene) {
+                const btnComps = scene.getComponentsInChildren('cc.Button');
+                if (btnComps) {
+                    for (let i = 0; i < btnComps.length; i++) {
+                        const btn = btnComps[i];
+                        const node = btn.node;
+                        if (!node || !node.activeInHierarchy) continue;
+                        let worldPos = null;
+                        const uiTransform = node.getComponent('cc.UITransform');
+                        if (uiTransform) {
+                            const wp = uiTransform.convertToWorldSpaceAR(cc.Vec3.ZERO);
+                            worldPos = { x: Math.round(wp.x), y: Math.round(wp.y) };
+                        }
+                        buttons.push({
+                            name: node.name,
+                            interactable: btn.interactable,
+                            worldPosition: worldPos
+                        });
+                    }
+                }
+            }
+
+            return {
+                success: true,
+                data: {
+                    sceneName,
+                    canvas: canvasInfo,
+                    isPaused: cc.director.isPaused ? cc.director.isPaused() : false,
+                    evalResult,
+                    activeButtons: buttons
+                },
+                message: `Runtime state queried for scene "${sceneName}"`
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    async gameEval(code) {
+        try {
+            let result = eval(code);
+            if (result && typeof result.then === 'function') {
+                result = await result;
+            }
+            return {
+                success: true,
+                data: result,
+                message: 'Code executed successfully'
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
     }
 };
