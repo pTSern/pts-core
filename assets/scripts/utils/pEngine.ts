@@ -732,10 +732,13 @@ interface _ICompUtils {
     appends: (events: pFlex.TArray<IEventBinders>) => void;
     removes(target: pFlex.TArray<TFlexTarget>, type: pFlex.TArray<_TComp>, ...types: _TComp[]): void
     isOnLoaded(target: Component): boolean
+    getInParent: <_T>(target: TFlexTarget, cls: pFlex.TCtorFlex<any, _T>) => (_T & Component) | null;
+    getComponentInParent: <T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T> | any) => T | null;
 }
 
 
 export const CompUtils = js.createMap<_ICompUtils>();
+export const CompUtil = CompUtils;
 
 CompUtils.isOnLoaded = function(target: Component) {
     return Boolean(target && ((target as any)._objFlags & CCObject.Flags.IsOnLoadCalled));
@@ -777,6 +780,13 @@ CompUtils.get = function<T extends Component>(target: TFlexTarget, cls: pFlex.TC
     const n = target instanceof Node ? target : target.node;
     return n.getComponent(cls) || n.addComponent(cls);
 }
+
+CompUtils.getInParent = function<T extends Component>(target: TFlexTarget, cls: pFlex.TCtor<any, T> | any): T | null {
+    if (!target) return null;
+    return pClass.getComponentInParent<T>(target, cls);
+}
+
+CompUtils.getComponentInParent = CompUtils.getInParent;
 
 CompUtils.binds = function(target: Component, key: string, binder: Component, handler: string) {
     const arr = (target as any)[key];

@@ -817,6 +817,23 @@ export function getComponentsInChildren<T = any>(
     return out;
 }
 
+/**
+ * Resolves the first component in a Node or any of its ancestors that matches a class or contract.
+ */
+export function getComponentInParent<T = any>(
+    nodeOrComp: Node | Component | null | undefined,
+    classOrContract: pFlex.TCtor<any, T> | pFlex.TCtorFlex<any, T> | (new (...args: any[]) => T) | Function | string
+): T | null {
+    if (!nodeOrComp || !classOrContract) return null;
+    let node = _resolveNode(nodeOrComp);
+    while (node) {
+        const comp = getComponent<T>(node, classOrContract);
+        if (comp) return comp;
+        node = node.parent;
+    }
+    return null;
+}
+
 let _hasHookedNodeGetComponent = false;
 let _origNodeGetComponent: Function | null = null;
 let _isResolvingContractComponent = false;
