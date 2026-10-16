@@ -323,7 +323,7 @@ interface _IPool {
 }
 
 
-export const Pool = js.createMap<_IPool>(false);
+export const Pool = js.createMap(false) as _IPool;
 
 Object.defineProperty(Pool, 'size', { get: () => _pool.length })
 
