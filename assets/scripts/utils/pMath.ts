@@ -12,7 +12,7 @@ interface _IAngle {
     length: (start: IVec3Like, target: IVec3Like) => number;
     between: (start: IVec3Like, target: IVec3Like, type?: 'Ox' | 'Oy' | 'Oz' | 'Between', unit?: 'degree' | 'radian') => number;
 }
-export const Angle = js.createMap<_IAngle>();
+export const Angle = js.createMap() as _IAngle;
 /**
  * Angle utilities.
  */

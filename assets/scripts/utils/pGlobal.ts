@@ -91,7 +91,7 @@ type _TLogOpt = {
     weight?: "bold" | "light" | "italic";
 } | _TLogLevel
 
-export const Logger = cc.js.createMap<_ILogger>();
+export const Logger = cc.js.createMap() as _ILogger;
 export function log(opt: _TLogOpt, ...args: any[]) {
     if(typeof opt === 'object') {
         let { level, group, color, weight } = opt;

@@ -83,9 +83,9 @@ namespace _IJson {
     }
 }
 
-export const Json = js.createMap<_IJson.Core>();
-Json.event = js.createMap<_IJson.Event.IMethods>();
-Json.param = js.createMap<_IJson.Param.IMethods>();
+export const Json = js.createMap() as _IJson.Core;
+Json.event = js.createMap() as _IJson.Event.IMethods;
+Json.param = js.createMap() as _IJson.Param.IMethods;
 
 function _jsnode(_val: cc.Node, simple: boolean = false) {
     if(!_val) return null;
@@ -393,7 +393,7 @@ const __$lookup_ = new Map<string, Node | Component>();
 const __$persistents_ = new Map<string, Node | Component>();
 const __$zidLookup_ = new Map<string, Node | Component>();
 
-const __$scenes_ = js.createMap<Record<string, Scene>>(true);
+const __$scenes_ = js.createMap(true) as Record<string, Scene>;
 
 if(DEBUG) {
     window['__pool_'] = __$lookup_;
@@ -519,7 +519,7 @@ function _$add(target: Node, pool: Map<string, Node | Component>) {
     }
 }
 
-export const NodeUtils = js.createMap<_INodeUtils>();
+export const NodeUtils = js.createMap() as _INodeUtils;
 
 NodeUtils.getNodePath = _getNodePath
 const _tempVec3 = v3();
@@ -737,7 +737,7 @@ interface _ICompUtils {
 }
 
 
-export const CompUtils = js.createMap<_ICompUtils>();
+export const CompUtils = js.createMap() as _ICompUtils;
 export const CompUtil = CompUtils;
 
 CompUtils.isOnLoaded = function(target: Component) {
@@ -825,7 +825,7 @@ interface _IDevice {
     vibrate(pattern: VibratePattern): void;
 }
 
-export const Device = js.createMap<_IDevice>();
+export const Device = js.createMap() as _IDevice;
 Device.vibrate = function(pattern: VibratePattern) {
     try {
         if(cc.sys.isBrowser) {
