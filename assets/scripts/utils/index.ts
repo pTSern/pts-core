@@ -10,6 +10,7 @@ import * as pEngine from "./pEngine";
 import * as pGlobal from "./pGlobal";
 import * as pConst from "./pConst";
 import * as pLazy from "./pLazy";
+import { pECS } from "./pECS";
 import { DEBUG } from "cc/env";
 import { js } from "cc";
 
@@ -24,7 +25,8 @@ export {
     pEngine,
     pGlobal,
     pConst,
-    pLazy
+    pLazy,
+    pECS
 };
 
 export { pTSAsset, implement, imps, getComponent, menu } from "../pTSAsset";

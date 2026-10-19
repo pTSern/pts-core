@@ -1,7 +1,6 @@
 
 import * as cc from "cc";
 import * as CC from "cc/env";
-import * as pConst from "./pConst";
 
 /**
  * pGlobal: System-wide utilities, logging, and miscellaneous helpers.
