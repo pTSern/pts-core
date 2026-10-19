@@ -83,7 +83,7 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
             this._intRunTime++;
             this._isExecuting = true;
 
-            this.onExecute.emit(...args);
+            this.onExecute?.emit(...args);
             await this._doAwaitTillReady?.();
             await this._onExecute(...args);
             this._isExecuting = false;
@@ -92,7 +92,7 @@ export abstract class Smart_StartUp extends Editor_PleaseOverride {
                 this._stacked --;
                 return;
             }
-            this.onEnd.emit();
+            this.onEnd?.emit();
             return;
         }
 

@@ -695,7 +695,7 @@ NodeUtils.setPosition = function<T extends IVec3Like>(target: TFlexCCNode, pos: 
 NodeUtils.getNodeInfo = function(target: TFlexCCNode): any {
     const n = target instanceof Node ? target : target.node;
     if (!n) return null;
-    return { name: n.name, active: n.active, uuid: n.uuid, zid: n.zid, layer: Layers.Enum[n.layer], children: n.children.map(c => NodeUtils.getNodeInfo(c)), components: (n as any)._components?.map((c: any) => ({ type: c.constructor.name, name: c.name })) };
+    return { name: n.name, active: n.active, uuid: n.uuid, layer: Layers.Enum[n.layer], children: n.children.map(c => NodeUtils.getNodeInfo(c)), components: (n as any)._components?.map((c: any) => ({ type: c.constructor.name, name: c.name })) };
 }
 
 NodeUtils.search = function<T extends Component>(cls: pFlex.TCtor<any, T>, root?: Node): T | null {
