@@ -64,7 +64,7 @@ export function getPrimitiveType(_type: EPrimitive) {
     return { type, default: type.default }
 }
 
-const _$pool = js.createMap<Record<ETypes, Set<string>>>(true);
+const _$pool = js.createMap(true) as Record<ETypes, Set<string>>;
 
 export function getAllCCClasses(type: ETypes = 'All'): Set<string> {
     const _all = js._nameToClass;
@@ -529,13 +529,33 @@ function validateContractImplementation(target: any, contract: any): string[] {
     return missing;
 }
 
-export function implement<TContracts extends (pFlex.TCtorFlex<any, any> | pFlex.TCtor<any, any> | string)[]>(
-    ...contracts: TContracts
-) {
+export type TContractType =
+    | (abstract new (...args: any[]) => any)
+    | (new (...args: any[]) => any)
+    | pFlex.TCtorFlex<any, any>
+    | pFlex.TCtor<any, any>
+    | Function
+    | string;
+
+export type TContractInput = TContractType | TContractType[];
+
+function _flattenContracts(items: any[]): any[] {
+    const result: any[] = [];
+    for (const item of items) {
+        if (Array.isArray(item)) {
+            result.push(..._flattenContracts(item));
+        } else if (item) {
+            result.push(item);
+        }
+    }
+    return result;
+}
+
+export function implement(...contracts: (TContractType | TContractType[])[]) {
     hookJsIsChildClassOf();
     hookNodeGetComponent();
 
-    const flatContracts: any[] = pArray.flatter(contracts);
+    const flatContracts: any[] = _flattenContracts(contracts);
 
     for (const contract of flatContracts) {
         if (typeof contract === 'function') {
@@ -543,7 +563,7 @@ export function implement<TContracts extends (pFlex.TCtorFlex<any, any> | pFlex.
         }
     }
 
-    return function <TTarget extends pFlex.TCtorFlex<any, any> | Function>(target: TTarget): TTarget {
+    return function <TTarget extends Function>(target: TTarget): TTarget {
         if (!target || typeof target !== 'function') return target;
 
         const targetCtor = target as any;
@@ -560,13 +580,11 @@ export function implement<TContracts extends (pFlex.TCtorFlex<any, any> | pFlex.
             }
         }
 
-        // 2. Register implementations on target constructor
-        if (!targetCtor[_$Keys.IMPL]) {
-            targetCtor[_$Keys.IMPL] = new Set<any>();
+        // 2. Register implementations on target constructor (own property to avoid mutating parent class)
+        if (!Object.prototype.hasOwnProperty.call(targetCtor, _$Keys.IMPL) || !targetCtor[_$Keys.IMPL]) {
+            targetCtor[_$Keys.IMPL] = new Set<any>(targetCtor[_$Keys.IMPL] || []);
         }
-        if (!targetCtor.__pTS_implements__) {
-            targetCtor.__pTS_implements__ = targetCtor[_$Keys.IMPL];
-        }
+        targetCtor.__pTS_implements__ = targetCtor[_$Keys.IMPL];
 
         for (const contract of flatContracts) {
             if (!contract) continue;
@@ -606,7 +624,7 @@ export function implement<TContracts extends (pFlex.TCtorFlex<any, any> | pFlex.
     };
 }
 
-export function imps(...contracts: (pFlex.TCtorFlex<any, any> | pFlex.TCtor<any, any> | string)[]) {
+export function imps(...contracts: (TContractType | TContractType[])[]) {
     return implement(...contracts);
 }
 
@@ -767,6 +785,43 @@ export function getComponents<T = any>(
     }
 
     return result;
+}
+
+type _TCtorInstance<T> = T extends pFlex.TCtorFlex<any, infer R>
+    ? R
+    : T extends abstract new (...args: any) => infer R
+      ? R
+      : Component;
+
+export type _TBulkComponentResults<T extends readonly any[]> = {
+    [K in keyof T]: _TCtorInstance<T[K]>[];
+};
+
+export function getBulkComponents<T extends pFlex.TCtorFlex<any, any>[]>(
+    target: Node | Component,
+    ...comps: T
+): _TBulkComponentResults<T> {
+    // Return empty arrays matching the requested tuple shape if target is null/undefined
+    if (!target) {
+        return comps.map(() => []) as unknown as _TBulkComponentResults<T>;
+    }
+
+    const _node = _resolveNode(target);
+
+    // Pre-populate each slot so missing components return [] rather than undefined
+    const _results = comps.map(() => []) as unknown as _TBulkComponentResults<T>;
+    const _comps = _node.components || [];
+
+    for (const _comp of _comps) {
+        for (let i = 0; i < comps.length; i++) {
+            const _ctor = comps[i];
+            if (isComponentOfContract(_comp, _ctor)) {
+                (_results[i] as Component[]).push(_comp);
+            }
+        }
+    }
+
+    return _results;
 }
 
 /**
@@ -983,7 +1038,7 @@ function _enrichNodeTreeForSearchTS(node: any, targetType: any): void {
     }
 
     if (Array.isArray(node.children)) {
-        node.children.forEach(child => _enrichNodeTreeForSearchTS(child, targetType));
+        node.children.forEach((child: any) => _enrichNodeTreeForSearchTS(child, targetType));
     }
 }
 
