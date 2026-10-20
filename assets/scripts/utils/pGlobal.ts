@@ -156,3 +156,29 @@ export async function unzip(base64: string, format: CompressionFormat = 'gzip'):
     }
 }
 
+
+export function setTimeoutRAF<T extends any[]> (callback: pFlex.TFunc, delay: number = 0, ...args: T): number {
+    const start = performance.now();
+
+    const raf = requestAnimationFrame
+    || window.requestAnimationFrame
+    || window['webkitRequestAnimationFrame']
+    || window['mozRequestAnimationFrame']
+    || window['oRequestAnimationFrame']
+    || window['msRequestAnimationFrame'];
+
+    if (CC.EDITOR || raf === undefined || (CC['USE_XR'] && globalThis.__globalXR?.isWebXR)) {
+        return setTimeout(callback, delay, ...args);
+    }
+
+    const handleRAF = (): void => {
+        if (performance.now() - start < delay) {
+            raf(handleRAF);
+        } else {
+            callback(...args);
+        }
+    };
+
+    return raf(handleRAF);
+}
+
