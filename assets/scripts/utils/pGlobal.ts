@@ -104,13 +104,22 @@ export function log(opt: _TLogOpt, ...args: any[]) {
     console.log.call(console, ...args);
 }
 
-export function warn(level: _TLogLevel, ...args: any[]) {
-    if(level === 'DEV' && !CC.DEV) return;
-    console.log.call(console, ...args);
+export function warn(opt: _TLogOpt, ...args: any[]) {
+    if(typeof opt === 'object') {
+        let { level, group, color, weight } = opt;
+        weight = weight || 'bold';
+        color = color ? color instanceof cc.Color ? `#${color.toHEX('#rrggbbaa')}` : color : '#3498db';
+        if(level === 'DEV' && !CC.DEV) return;
+        console.log(`%c ${group}`, `color: ${color}; font-weight: ${weight}`, ...args);
+        return;
+    }
+    if(opt === 'DEV' && !CC.DEV) return;
+    console.warn.call(console, ...args);
 }
+
 export function error(level: _TLogLevel, ...args: any[]) {
     if(level === 'DEV' && !CC.DEV) return;
-    console.log.call(console, ...args);
+    console.warn.call(console, ...args);
 }
 
 // Compression / Decompression
