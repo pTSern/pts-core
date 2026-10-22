@@ -535,17 +535,17 @@ function _extractPosition(target: TFlexPosition<IVec3Like>, outVec: cc.Vec3): { 
     if (target instanceof Node) {
         return { vec: outVec.set(target.worldPosition), isWorld: true };
     }
-    if (pObject.isFlexKey(target)) {
-        const p = target as any;
-        if (p.node) {
-            return { vec: outVec.set((p.node as Node).worldPosition), isWorld: true };
-        }
-        if ('position' in p) {
-            const isWorld = 'isWorldPos' in p ? Boolean(p.isWorldPos) : false;
-            const { x, y, z = 0 } = p.position;
-            return { vec: outVec.set(x, y, z), isWorld };
-        }
+
+    const p = target as any;
+    if (p.node) {
+        return { vec: outVec.set((p.node as Node).worldPosition), isWorld: true };
     }
+    if ('position' in p) {
+        const isWorld = 'isWorldPos' in p ? Boolean(p.isWorldPos) : false;
+        const { x, y, z = 0 } = p.position;
+        return { vec: outVec.set(x, y, z), isWorld };
+    }
+
     const { x, y, z = 0 } = _getPosition(target as any);
     return { vec: outVec.set(x, y, z), isWorld: false };
 }
@@ -677,6 +677,7 @@ NodeUtils.create = function(opt, configs?) {
 }
 
 NodeUtils.setPosition = function<T extends IVec3Like>(target: TFlexCCNode, pos: TFlexPosition<T>, dif?: T) {
+
     const node = target instanceof Node ? target : target.node;
     const dx = dif?.x || 0;
     const dy = dif?.y || 0;
@@ -690,6 +691,7 @@ NodeUtils.setPosition = function<T extends IVec3Like>(target: TFlexCCNode, pos: 
     } else {
         node.setPosition(targetVec);
     }
+    console.log(node, '[NodeUtils.setPosition]', targetVec, isWorld, vec);
 }
 
 NodeUtils.getNodeInfo = function(target: TFlexCCNode): any {
