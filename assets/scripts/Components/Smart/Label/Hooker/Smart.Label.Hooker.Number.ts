@@ -21,12 +21,24 @@ export class Smart_Label_Hooker_Number extends Smart_Label_Hooker<number> {
 
     @editor_property()
     protected _value: number = -1;
+
     set(val: number): void {
-        if(this._value === val) return;
         this._value = val;
-        this._label.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(val) : this.isUseDotFormat ? pString.formatWithDots(val, this.dot) : val}${this.suffix}`;
+        const lbl = this.label;
+        if (lbl) {
+            lbl.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(val) : this.isUseDotFormat ? pString.formatWithDots(val, this.dot) : val}${this.suffix}`;
+        }
     }
+
     get() { return this._value }
+
+    protected _onPreLoad(): void {
+        if (this._value !== -1) {
+            const val = this._value;
+            this._value = -1;
+            this.set(val);
+        }
+    }
 
     protected _actLookUpBinder(...args: any[]): void {
         for(const _item of args) {

@@ -1,7 +1,6 @@
 import { _decorator } from "cc";
 import { Event_Awaitable } from "../Event/Event.Awaitable";
 import { Smart_StartUp } from "./Smart.StartUp";
-import { Event_Flexer } from "../Event/Event.Flexer";
 
 const { ccclass, property } = _decorator
 

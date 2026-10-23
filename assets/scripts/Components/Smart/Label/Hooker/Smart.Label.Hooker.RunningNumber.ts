@@ -4,7 +4,7 @@ import { pConst, pString, pClass, pGlobal } from 'db://pts-core/scripts/utils';
 import { Smart_Label_Hooker } from './Smart.Label.Hooker';
 
 const { ccclass, property, requireComponent } = _decorator;
-const { editor_property } = pClass
+const { editor_property } = pClass;
 
 @ccclass('Smart_Label_Hooker_RunningNumber')
 @requireComponent(Label)
@@ -25,10 +25,21 @@ export class Smart_Label_Hooker_RunningNumber extends Smart_Label_Hooker<number>
     get value() { return this._value; }
     set value(value: number) {
         this._value = value;
-        this._label.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(this._value) : this._value}${this.suffix}`;
+        const lbl = this.label;
+        if (lbl) {
+            lbl.string = `${this.prefix}${this.isUseKMBFormat ? pString.formatKMB(this._value) : this._value}${this.suffix}`;
+        }
     }
 
     get() { return this._value }
+
+    protected _onPreLoad(): void {
+        if (this._value !== 999.999) {
+            const val = this._value;
+            this._value = 999.999;
+            this.value = val;
+        }
+    }
 
     protected _tween: Tween<Smart_Label_Hooker_RunningNumber> = null;
 
@@ -46,7 +57,7 @@ export class Smart_Label_Hooker_RunningNumber extends Smart_Label_Hooker<number>
 
         this._tween?.stop();
         this.duration <= 0 ? this.value = val : (this._tween = tween<Smart_Label_Hooker_RunningNumber>(this).to(this.duration, { value: val }, { easing: this.easing.get, onUpdate(target, ratio) {
-            target.value = math.lerp(target._value, val, ratio)
+            target.value = math.lerp(target._value, val, ratio);
         }, }).start());
     }
 }
