@@ -19,6 +19,13 @@ export abstract class Smart_Label_Hooker<_TType = any> extends Editor_PleaseOver
     @editor_property(Label)
     protected _label: Label = null;
 
+    protected get label(): Label | null {
+        if (!this._label && this.node) {
+            this._label = this.getComponent(Label);
+        }
+        return this._label;
+    }
+
     @property({ type: JsonAsset, group: pConst.GROUPS.EVENT })
     onChangerLookup: JsonAsset[] = [];
 
@@ -26,7 +33,9 @@ export abstract class Smart_Label_Hooker<_TType = any> extends Editor_PleaseOver
     abstract get(): _TType;
 
     protected __preload(): void {
-        this._label = this.getComponent(Label);
+        if (!this._label && this.node) {
+            this._label = this.getComponent(Label);
+        }
         pEngine.Json.event.add(this.onChangerLookup, { func: this._actLookUpBinder, binder: this });
         this._onPreLoad?.();
     }
@@ -46,7 +55,10 @@ export abstract class Smart_Label_Hooker<_TType = any> extends Editor_PleaseOver
     }
 
     set string(text: string) {
-        this._label.string = this.prefix + text + this.suffix;
+        const lbl = this.label;
+        if (lbl) {
+            lbl.string = this.prefix + text + this.suffix;
+        }
     }
 
 }
