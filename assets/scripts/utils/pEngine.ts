@@ -381,7 +381,7 @@ interface _INodeUtilsCreator {
     parent?: Node;
     active?: boolean;
     pos?: TFlexPosition;
-    fab?: pFlex.TArray<Prefab>;
+    fab?: pFlex.TArray<Prefab>
     scale?: IVec3Like;
     rotation?: IVec3Like;
     isDisconnectPrefabLink?: boolean;
@@ -641,12 +641,14 @@ NodeUtils.getCCProps = function (target: pFlex.TFunc | object, ...types: pFlex.T
 }
 
 NodeUtils.create = function(opt, configs?) {
-    let node = null
+    let node: Node = null
     if(opt.pool) {
         do {
             node = opt.pool.get();
         } while (node && !node.isValid);
     }
+
+    //pGlobal.log('DEV', '[NodeUtils.create] >>', opt, ' with configs ', configs, "\nNode: ", node, "\nPool: ", opt.pool);
 
     if(!node || !node.isValid) {
         node = opt.fab ? Array.isArray(opt.fab) ? instantiate(pMath.rand(opt.fab)) : instantiate(opt.fab) : new Node();
@@ -838,4 +840,7 @@ Device.vibrate = function(pattern: VibratePattern) {
     }
 }
 
+export function yeildAnimationFrame() {
+    return new Promise(_rs => pGlobal.setTimeoutRAF(_rs))
+}
 

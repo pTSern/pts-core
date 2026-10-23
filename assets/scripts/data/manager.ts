@@ -224,7 +224,6 @@ Data_Manager.json = function(sync: boolean): any {
     return sync ? Data_Manager.wait().then(() => JSON.stringify(_$mobj())) : JSON.stringify(_$mobj()); 
 };
 
-
 if(DEV) {
     globalThis.Data_Manager = Data_Manager;
     globalThis.Data_Manager['__internal__'] = _$

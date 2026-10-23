@@ -476,6 +476,37 @@ function isPtsAssetOrComponent(cls: any): boolean {
     return false;
 }
 
+export function isImplementCheckEnabled(): boolean {
+    if (typeof (globalThis as any).__pTS_implement_check__ === 'boolean') {
+        return (globalThis as any).__pTS_implement_check__;
+    }
+
+    try {
+        const editor = (globalThis as any).Editor || (typeof window !== 'undefined' && (window as any).Editor);
+        if (editor && editor.Project && editor.Project.path) {
+            const req = (globalThis as any).require || (typeof window !== 'undefined' && (window as any).require);
+            const fs = typeof req === 'function' ? req('fs') : null;
+            const path = typeof req === 'function' ? req('path') : null;
+            if (fs && path) {
+                const settingsPath = path.join(editor.Project.path, 'settings', 'v2', 'packages', 'pts-core.json');
+                if (fs.existsSync(settingsPath)) {
+                    const data = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+                    if (typeof data.implement_check === 'boolean') {
+                        (globalThis as any).__pTS_implement_check__ = data.implement_check;
+                        return data.implement_check;
+                    }
+                }
+            }
+        }
+    } catch {}
+
+    return true;
+}
+
+export function setImplementCheckEnabled(val: boolean): void {
+    (globalThis as any).__pTS_implement_check__ = !!val;
+}
+
 function validateContractImplementation(target: any, contract: any): string[] {
     const missing: string[] = [];
     if (!target || !contract) return missing;
@@ -602,7 +633,7 @@ export function implement(...contracts: (TContractType | TContractType[])[]) {
                 }
 
                 // 3. Dev / Editor safety verification: verify implemented properties
-                if (EDITOR || DEV) {
+                if ((EDITOR || DEV) && isImplementCheckEnabled()) {
                     const missing = validateContractImplementation(targetCtor, contract);
                     if (missing.length > 0) {
                         const warnMsg = `[@implement] Type Check Error: Class "${targetName}" declares @implement(${cName || 'Contract'}), but is missing implementation for: [${missing.join(', ')}].`;
