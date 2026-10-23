@@ -92,6 +92,11 @@ export abstract class pTSAsset<_TInterfaces extends Record<string, any> = { any:
         }
     }
 
+    static wait(asset: pFlex.TArray<pTSAsset>, ...assets: pTSAsset[]) {
+        assets = pArray.flat(asset, assets);
+        return Promise.all(assets.map(_asset => _asset.ready));
+    }
+
     static remove(assets: pFlex.TArray<pTSAsset>, funcs: pFlex.TArray<pFlex.THandler>) {
         assets = pArray.flatter(assets);
         funcs = pArray.flatter(funcs);
@@ -191,7 +196,7 @@ export abstract class pTSAsset<_TInterfaces extends Record<string, any> = { any:
         return this._driver.emit(type, ..._params);
     }
 
-    clear<_TKey extends keyof _TInterfaces>(key: pFlex.TArray<_TKey>, ...keys: _TKey[]) {
+    clean<_TKey extends keyof _TInterfaces>(key: pFlex.TArray<_TKey>, ...keys: _TKey[]) {
         keys = pArray.flat(key, keys);
         for(const _key of keys) {
             this._driver.clear(_key);

@@ -110,16 +110,24 @@ export function warn(opt: _TLogOpt, ...args: any[]) {
         weight = weight || 'bold';
         color = color ? color instanceof cc.Color ? `#${color.toHEX('#rrggbbaa')}` : color : '#3498db';
         if(level === 'DEV' && !CC.DEV) return;
-        console.log(`%c ${group}`, `color: ${color}; font-weight: ${weight}`, ...args);
+        console.warn(`%c ${group}`, `color: ${color}; font-weight: ${weight}`, ...args);
         return;
     }
     if(opt === 'DEV' && !CC.DEV) return;
     console.warn.call(console, ...args);
 }
 
-export function error(level: _TLogLevel, ...args: any[]) {
-    if(level === 'DEV' && !CC.DEV) return;
-    console.warn.call(console, ...args);
+export function error(opt: _TLogOpt, ...args: any[]) {
+    if(typeof opt === 'object') {
+        let { level, group, color, weight } = opt;
+        weight = weight || 'bold';
+        color = color ? color instanceof cc.Color ? `#${color.toHEX('#rrggbbaa')}` : color : '#3498db';
+        if(level === 'DEV' && !CC.DEV) return;
+        console.error(`%c ${group}`, `color: ${color}; font-weight: ${weight}`, ...args);
+        return;
+    }
+    if(opt === 'DEV' && !CC.DEV) return;
+    console.error.call(console, ...args);
 }
 
 // Compression / Decompression

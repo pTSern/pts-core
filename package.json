@@ -11,6 +11,22 @@
         "build": "tsc",
         "watch": "tsc -w"
     },
+    "panels": {
+        "default": {
+            "title": "pTS-Core Settings",
+            "type": "dockable",
+            "main": "dist/panel.js",
+            "flags": {
+                "save": true
+            },
+            "size": {
+                "min-width": 360,
+                "min-height": 260,
+                "width": 420,
+                "height": 380
+            }
+        }
+    },
     "contributions": {
         "asset-db": {
             "mount": {
@@ -35,6 +51,47 @@
                 "gameQueryState",
                 "gameEval"
             ]
+        },
+        "menu": [
+            {
+                "path": "i18n:menu.extension/pTS-Core",
+                "label": "Settings",
+                "message": "open-panel"
+            }
+        ],
+        "profile": {
+            "project": {
+                "implement_check": {
+                    "default": true,
+                    "message": "profile::project::changed_implement_check",
+                    "label": "Implement Check"
+                }
+            }
+        },
+        "project": {
+            "tab_1": {
+                "label": "pTS Core",
+                "content": {
+                    "implement_check": {
+                        "ui": "ui-checkbox",
+                        "attributes": {
+                            "tooltip": "If enabled, @implement checks that the target class actually implements all contract properties and methods. Default: true."
+                        }
+                    }
+                }
+            }
+        },
+        "messages": {
+            "open-panel": {
+                "methods": [
+                    "openPanel"
+                ]
+            },
+            "profile::project::changed_implement_check": {
+                "methods": [
+                    "onImplementCheckChanged"
+                ]
+            }
         }
     }
 }
