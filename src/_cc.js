@@ -2052,6 +2052,38 @@ exports.unload = function() {
 // ─── Method Registry ───
 
 exports.methods = {
+    eval(code) {
+        try {
+            return eval(code);
+        } catch (e) {
+            return { error: e.message };
+        }
+    },
+
+    async reimportAsset(url) {
+        try {
+            if (typeof Editor !== 'undefined' && Editor.Message) {
+                const res = await Editor.Message.request('asset-db', 'reimport-asset', url);
+                return { success: true, res };
+            }
+            return { success: false, error: 'Editor.Message not available' };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    },
+
+    async refreshAsset(url = 'db://assets') {
+        try {
+            if (typeof Editor !== 'undefined' && Editor.Message) {
+                const res = await Editor.Message.request('asset-db', 'refresh-asset', url);
+                return { success: true, res };
+            }
+            return { success: false, error: 'Editor.Message not available' };
+        } catch (e) {
+            return { success: false, error: e.message };
+        }
+    },
+
     log(...args) {
         cc.log('[pTS-Core:_cc]', ...args);
         return { success: true };

@@ -3,11 +3,11 @@ import { pArray, pClass, pConst, pEngine, pGlobal, pObject, pTSAsset } from "../
 import { editor_property, implement } from "../utils/pClass";
 import { CC_IEnumList } from "../interfaces/cc/CC.IEnumable";
 
-const { ccclass, property, menu } = _decorator
+const { ccclass, property } = _decorator;
 
 @implement(NodePool)
 @ccclass("Pooler_Node_Asset")
-@menu("Pooler/Node")
+@pTSAsset.menu("Pooler/Node")
 export class Pooler_Node_Asset extends pTSAsset implements NodePool {
 
     @property({ type: CCInteger, min: 0 })
