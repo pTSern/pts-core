@@ -1,4 +1,4 @@
-import { __private, _decorator, Asset, Director, director, assetManager, CCClass } from "cc";
+import { __private, _decorator, Asset, Director, director, assetManager, CCClass, Component } from "cc";
 import { BUILD } from "cc/env";
 import * as pDriver from "./utils/pDriver";
 import * as pConst from "./utils/pConst";
@@ -45,6 +45,40 @@ export function menu(opt: pTS_TMenuOption) {
         }
         return target;
     };
+}
+
+// Guard against Cocos warning 3623 ("Can not use 'editor' attribute, '%s' not inherits from Components")
+// Cocos Creator's _decorator.menu writes into cache.proto.editor.menu which is only valid for Components.
+// If _decorator.menu is used on a non-Component (e.g. pTSAsset), intercept it, route to pTSAsset.menu,
+// and clean up cache.proto.editor so CCClass won't emit warning 3623.
+if (typeof _decorator !== 'undefined' && typeof _decorator.menu === 'function') {
+    const origDecoratorMenu = _decorator.menu as unknown as ((opt: pTS_TMenuOption) => ClassDecorator) & { __pts_hooked__?: boolean };
+    if (!origDecoratorMenu.__pts_hooked__) {
+        const hookedMenu = function (opt: pTS_TMenuOption) {
+            const origDec = origDecoratorMenu(opt);
+            return function (target: Function) {
+                if (!target) return target;
+                const isComp = (target as unknown) === Component || (target.prototype && target.prototype instanceof Component);
+                if (isComp) {
+                    return origDec(target);
+                }
+                menu(opt)(target);
+                try {
+                    const cacheKey = '[[ccclass_cache]]';
+                    const cache = (target as any)[cacheKey] as { proto?: { editor?: Record<string, unknown> } } | undefined;
+                    if (cache?.proto?.editor) {
+                        delete cache.proto.editor.menu;
+                        if (Object.keys(cache.proto.editor).length === 0) {
+                            delete cache.proto.editor;
+                        }
+                    }
+                } catch {}
+                return target;
+            };
+        };
+        hookedMenu.__pts_hooked__ = true;
+        (_decorator as unknown as Record<string, unknown>).menu = hookedMenu;
+    }
 }
 
 export { implement, imps, getComponent };
