@@ -1,5 +1,5 @@
 
-import { easing, IVec3Like, js, math, Size, TweenEasing, v3, Vec3 } from "cc";
+import { easing, IVec2Like, IVec3Like, js, math, randomRange, randomRangeInt, Size, TweenEasing, v2, v3, Vec3 } from "cc";
 import * as pArray from "./pArray";
 
 /**
@@ -131,5 +131,47 @@ export function toClock(time: number, hasHour: boolean = false) {
     const mm = Math.floor(left / 60);
     const ss = Math.floor(left % 60);
     return { hh, mm, ss };
+}
+
+export function zigzag<_TOut extends IVec2Like>(start: _TOut, end: _TOut, amount: number | [number, number], height: number | [number, number], threshold: number | [number, number], includeStartPoint: boolean = false, includedEndPoints: boolean = false, out?: pFlex.TFunc<[_TOut], _TOut>): _TOut[] {
+    const _points: _TOut[] = [];
+    if(includeStartPoint) _points.push(out ? out(start) : start);
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+
+    amount = Array.isArray(amount) ? randomRangeInt(amount[0], amount[1]) : Math.floor(amount);
+    height = Array.isArray(height) ? randomRangeInt(height[0], height[1]) : height;
+    threshold = Math.max(0, Math.min(1, Array.isArray(threshold) ? randomRange(threshold[0], threshold[1]) : threshold));
+
+    if(length === 0 || amount <= 0) {
+        if(includedEndPoints) _points.push(out ? out(end) : end);
+        return _points;
+    }
+
+    const nx = -dy / length;
+    const ny = dx / length;
+
+    let _height = height;
+
+    for(let i = 1; i <= amount; i++) {
+        const _t = i / (amount + 1);
+
+        const _x = start.x + dx * _t;
+        const _y = start.y + dy * _t;
+
+        const _size = i % 2 == 1 ? 1 : -1;
+
+        const _px = _x + nx * _height * _size;
+        const _py = _y + ny * _height * _size;
+
+        _points.push(out ? out({ x: _px, y: _py } as _TOut) : { x: _px, y: _py } as _TOut);
+        _height *= (1 - threshold);
+    }
+
+    if(includedEndPoints) _points.push(out ? out(end) : end);
+
+    return _points
 }
 
