@@ -1187,99 +1187,60 @@ function _evaluatePtsLive(className, currentValues) {
 // ─── Helpers: Live Runtime Inspector Sync ───
 
 function isPreviewModeRunning() {
+    if (typeof window !== 'undefined' && window.isPreviewProcess) return Boolean(_previewSessionId);
     try {
-        if (typeof globalThis !== 'undefined' && typeof globalThis.__pTS_IS_PREVIEW__ === 'boolean') {
-            if (globalThis.__pTS_IS_PREVIEW__) return true;
-        }
-    } catch {}
-
-    try {
-        if (typeof cce !== 'undefined') {
-            if (cce.Engine && (cce.Engine.isPlaying || cce.Engine.isPlayMode)) return true;
-            if (cce.PlayMode && (cce.PlayMode.isPlaying || cce.PlayMode.isPlayMode)) return true;
-        }
-    } catch {}
-
-    return false;
+        return Boolean(typeof cce !== 'undefined' && (
+            (cce.Engine && (cce.Engine.isPlaying || cce.Engine.isPlayMode)) ||
+            (cce.PlayMode && (cce.PlayMode.isPlaying || cce.PlayMode.isPlayMode))));
+    } catch { return false; }
 }
 
-function getLiveInstance(uuid, className) {
-    if (!uuid) return null;
+function _isHydratedLiveAsset(instance, uuid) {
+    if (!instance || instance._isLoaded !== true || !(instance instanceof cc.Asset)) return false;
+    if (typeof cc.isValid === 'function' && !cc.isValid(instance, true)) return false;
+    const actual = instance._uuid || instance.uuid;
+    if (actual === uuid) return true;
+    const decode = cc.assetManager && cc.assetManager.utils && cc.assetManager.utils.decodeUuid;
+    try { return Boolean(actual && decode && decode(actual) === decode(uuid)); } catch { return false; }
+}
 
-    // 1. Check dedicated live map registered by pTSAsset / Json.Register
-    try {
-        if (globalThis['__pTS_LIVE_ASSETS__'] && typeof globalThis['__pTS_LIVE_ASSETS__'].get === 'function') {
-            const inst = globalThis['__pTS_LIVE_ASSETS__'].get(uuid);
-            if (inst) return inst;
-        }
-    } catch {}
-
-    // 2. Check cc.assetManager.assets
-    try {
-        if (typeof cc !== 'undefined' && cc.assetManager && cc.assetManager.assets) {
-            let inst = cc.assetManager.assets.get(uuid);
-            if (inst) return inst;
-            const utils = cc.assetManager.utils;
-            if (utils) {
-                if (typeof utils.decodeUuid === 'function') {
-                    inst = cc.assetManager.assets.get(utils.decodeUuid(uuid));
-                    if (inst) return inst;
-                }
-                if (typeof utils.compressUuid === 'function') {
-                    inst = cc.assetManager.assets.get(utils.compressUuid(uuid));
-                    if (inst) return inst;
-                }
+function _lookupLoadedLiveAsset(uuid) {
+    const manager = cc.assetManager;
+    if (!manager || !manager.assets) return null;
+    const keys = [uuid];
+    const utils = manager.utils;
+    if (utils) {
+        for (const name of ['decodeUuid', 'compressUuid']) {
+            if (typeof utils[name] === 'function') {
+                try { keys.push(utils[name](uuid)); } catch {}
             }
         }
-    } catch {}
+    }
+    for (const key of keys) {
+        const instance = manager.assets.get(key);
+        if (_isHydratedLiveAsset(instance, uuid)) return instance;
+    }
+    const lookup = globalThis[Symbol.for('pTS.preview.lookupLoadedAsset')];
+    if (typeof lookup === 'function') {
+        const instance = lookup(uuid);
+        if (_isHydratedLiveAsset(instance, uuid)) return instance;
+    }
+    return null;
+}
 
-    // 3. Check globalThis._$pTSAssets
-    try {
-        if (globalThis['_$pTSAssets']) {
-            if (className && globalThis['_$pTSAssets'][className] && globalThis['_$pTSAssets'][className][uuid]) {
-                return globalThis['_$pTSAssets'][className][uuid];
-            }
-            for (const cName in globalThis['_$pTSAssets']) {
-                if (globalThis['_$pTSAssets'][cName] && globalThis['_$pTSAssets'][cName][uuid]) {
-                    return globalThis['_$pTSAssets'][cName][uuid];
-                }
-            }
+function getLiveInstance(uuid, className, observerId) {
+    if (!isPreviewModeRunning() || !uuid) return null;
+    for (const subscription of _previewObservers.values()) {
+        if (subscription.uuid !== uuid || (observerId && subscription.observerId !== observerId)) continue;
+        if (className && subscription.className && className !== subscription.className) continue;
+        if (!_isHydratedLiveAsset(subscription.instance, uuid)) subscription.instance = null;
+        if (!subscription.instance) {
+            const instance = _lookupLoadedLiveAsset(uuid);
+            const expectedClass = className || subscription.className;
+            if (instance && (!expectedClass || _runtimeClassName(instance.constructor) === expectedClass)) subscription.instance = instance;
         }
-    } catch {}
-
-    // 4. Crawl active scene for pTSAsset_Register or node components referencing this asset
-    try {
-        if (typeof cc !== 'undefined' && cc.director) {
-            const scene = cc.director.getScene();
-            if (scene) {
-                const search = (node) => {
-                    if (!node) return null;
-                    if (node.components) {
-                        for (let i = 0; i < node.components.length; i++) {
-                            const comp = node.components[i];
-                            if (!comp) continue;
-                            if (Array.isArray(comp.assets)) {
-                                for (let j = 0; j < comp.assets.length; j++) {
-                                    const a = comp.assets[j];
-                                    if (a && (a._uuid === uuid || a.uuid === uuid)) return a;
-                                }
-                            }
-                        }
-                    }
-                    if (node.children) {
-                        for (let i = 0; i < node.children.length; i++) {
-                            const found = search(node.children[i]);
-                            if (found) return found;
-                        }
-                    }
-                    return null;
-                };
-                const found = search(scene);
-                if (found) return found;
-            }
-        }
-    } catch {}
-
+        return subscription.instance;
+    }
     return null;
 }
 
@@ -1437,68 +1398,198 @@ function _enrichDumpWithEditorProps(dump, instance, ctor) {
     }
 }
 
-function _extractLiveValues(instance, className) {
-    const ctor = instance.constructor || (className ? cc.js.getClassByName(className) : null);
-    const props = ctor ? _getCCProps(ctor) : [];
-    const values = {};
-    for (const p of props) {
-        if (BASE_ASSET_IGNORED_PROPS.has(p) || p.startsWith('__')) continue;
-        try {
-            const val = instance[p];
-            if (typeof val === 'function' || val instanceof Promise || val instanceof Map || val instanceof Set) continue;
-            if (_isRealCurve(val)) {
-                values[p] = _serializeRealCurve(val);
-            } else {
-                values[p] = val;
-            }
-        } catch {}
+function _runtimeClassName(type) {
+    if (Array.isArray(type)) return _runtimeClassName(type[0]);
+    return typeof type === 'function' ? (cc.js.getClassName(type) || type.name) : (typeof type === 'string' ? type : '');
+}
+
+function _runtimeKeys(instance) {
+    const editorProps = _getEditorPropsOfClass(instance.constructor, instance);
+    return [...new Set([..._getCCProps(instance), ...Object.keys(editorProps)])].filter(key =>
+        !key.startsWith('__') && (!BASE_ASSET_IGNORED_PROPS.has(key) || Object.prototype.hasOwnProperty.call(editorProps, key)));
+}
+
+// Transport only declared data. Engine identities are leaves, never engine graphs.
+function _serializeRuntimeValue(value, allowReferences = false, seen = new Set(), depth = 0) {
+    if (value === null) return null;
+    if (value === undefined || depth > 20) return undefined;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string' || typeof value === 'boolean') return value;
+    if (typeof value !== 'object') return undefined;
+    if (value instanceof cc.Node || value instanceof cc.Component) {
+        if (!allowReferences) return undefined;
+        if (typeof cc.isValid === 'function' && !cc.isValid(value, true)) return null;
+        const component = value instanceof cc.Component;
+        const node = component ? value.node : value;
+        if (!node || (typeof cc.isValid === 'function' && !cc.isValid(node, true))) return null;
+        return {
+            __runtimeReference__: component ? 'component' : 'node',
+            uuid: value.uuid || value._id || '',
+            nodeUuid: node.uuid || node._id || '',
+            name: component ? (node.name || '') : (value.name || ''),
+            ...(component ? { componentType: _runtimeClassName(value.constructor) } : {})
+        };
     }
-    for (const k of Object.keys(instance)) {
-        if (!k.startsWith('_') && !(k in values) && !BASE_ASSET_IGNORED_PROPS.has(k) && !k.startsWith('__')) {
+    if (value instanceof cc.Asset) return { uuid: value._uuid || value.uuid || '' };
+    if (value instanceof Promise || value instanceof Map || value instanceof Set || seen.has(value)) return undefined;
+    if (_isRealCurve(value)) return _serializeRealCurve(value);
+    seen.add(value);
+    try {
+        if (Array.isArray(value)) return Array.from(value, item => _serializeRuntimeValue(item, allowReferences, seen, depth + 1) ?? null);
+        const ctor = value.constructor;
+        const mathType = cc.ValueType && value instanceof cc.ValueType;
+        const plain = !ctor || ctor === Object;
+        if (!plain && !mathType && !_getCCProps(value).length && !Object.keys(_getEditorPropsOfClass(ctor, value)).length) return undefined;
+        const result = {};
+        const editorProps = plain || mathType ? {} : _getEditorPropsOfClass(ctor, value);
+        const keys = plain || mathType ? Object.keys(value) : _runtimeKeys(value);
+        for (const key of keys) {
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+            const descriptor = _findPropertyDescriptor(value, key);
+            if ((plain || mathType) && descriptor && typeof descriptor.get === 'function') continue;
             try {
-                const val = instance[k];
-                if (typeof val === 'function' || val instanceof Promise || val instanceof Map || val instanceof Set) continue;
-                if (_isRealCurve(val)) {
-                    values[k] = _serializeRealCurve(val);
-                } else {
-                    values[k] = val;
-                }
+                const serialized = _serializeRuntimeValue(value[key], allowReferences || !!editorProps[key], seen, depth + 1);
+                if (serialized !== undefined) result[key] = serialized;
             } catch {}
         }
+        return plain ? result : { __type__: _runtimeClassName(ctor), __value__: result };
+    } finally {
+        seen.delete(value);
     }
-    // Extract @editor_property fields
-    const editorProps = (ctor && ctor.__editor_props__) || (instance && instance.__editor_props__);
-    if (editorProps && typeof editorProps === 'object') {
-        for (const epKey of Object.keys(editorProps)) {
-            const exists = _hasProperty(instance, epKey) || (ctor && ctor.prototype && _hasProperty(ctor.prototype, epKey));
-            if (!exists) continue;
-            if (!(epKey in values)) {
-                try {
-                    const val = instance[epKey];
-                    if (typeof val !== 'function' && !(val instanceof Promise) && !(val instanceof Map) && !(val instanceof Set)) {
-                        values[epKey] = val;
-                    }
-                } catch (e) {}
+}
+
+function _extractLiveValues(instance) {
+    const result = {};
+    const editorProps = _getEditorPropsOfClass(instance.constructor, instance);
+    for (const key of _runtimeKeys(instance)) {
+        try {
+            const value = _serializeRuntimeValue(instance[key], !!editorProps[key], new Set([instance]));
+            if (value !== undefined) result[key] = value;
+        } catch {}
+    }
+    return result;
+}
+
+function _runtimeMetadata(meta) {
+    const result = {};
+    for (const [key, value] of Object.entries(meta || {})) {
+        if (key === 'type' || key === 'ctor') {
+            const type = _runtimeClassName(value);
+            if (type) result.type = type;
+            if (Array.isArray(value)) {
+                result.isArray = true;
+                result.elementTypeData = { type, value: null };
             }
+            const ctor = Array.isArray(value) ? value[0] : value;
+            if (typeof ctor === 'function') {
+                if (ctor === cc.Node || ctor.prototype instanceof cc.Node) result.extends = ['cc.Node'];
+                else if (ctor === cc.Component || ctor.prototype instanceof cc.Component) result.extends = ['cc.Component'];
+                else if (ctor === cc.Asset || ctor.prototype instanceof cc.Asset) result.extends = ['cc.Asset'];
+                if (result.elementTypeData && result.extends) result.elementTypeData.extends = result.extends;
+            }
+        } else if (key !== 'default' && typeof value !== 'function') {
+            const serialized = _serializeRuntimeValue(value);
+            if (serialized !== undefined) result[key] = serialized;
         }
     }
-    // Walk prototype getters to extract runtime getter properties (e.g. passed)
-    let currProto = Object.getPrototypeOf(instance);
-    while (currProto && currProto !== Object.prototype && currProto !== cc.Asset.prototype) {
-        const descs = Object.getOwnPropertyDescriptors(currProto);
-        for (const [propName, desc] of Object.entries(descs)) {
-            if (desc.get && typeof desc.get === 'function' && !propName.startsWith('_') && !(propName in values) && !BASE_ASSET_IGNORED_PROPS.has(propName)) {
-                try {
-                    const val = instance[propName];
-                    if (typeof val !== 'function' && !(val instanceof Promise) && !(val instanceof Map) && !(val instanceof Set)) {
-                        values[propName] = val;
-                    }
-                } catch {}
-            }
-        }
-        currProto = Object.getPrototypeOf(currProto);
+    if (typeof meta?.ctor === 'function') result.type = _runtimeClassName(meta.ctor);
+    return result;
+}
+
+function _runtimePropertyAttrs(owner, key) {
+    const attrs = { ..._getCCPropsInfo(owner)[key] };
+    const delimiter = cc.Class.Attr.DELIMETER || '$_$';
+    for (const [name, value] of Object.entries(owner.__instance_attrs__ || {})) {
+        const [property, attribute] = name.split(delimiter);
+        if (property === key) attrs[attribute] = value;
     }
-    return values;
+    return { ...attrs, ..._getEditorPropsOfClass(owner.constructor, owner)[key] };
+}
+
+function _runtimePropertyDump(rawValue, value, meta, owner, key, seen = new Set()) {
+    const dump = _runtimeMetadata(meta);
+    const descriptor = _findPropertyDescriptor(owner, key);
+    dump.name = key;
+    dump.displayName = dump.displayName || meta.name || key;
+    // Detect CC Enum type from meta.type (set by @editor_property(ETest) or @property({type:ETest}))
+    const metaEnumType = Array.isArray(meta.type) ? meta.type[0] : (meta.ctor || meta.type);
+    let isMetaEnum = false;
+    let metaEnumList = null;
+    if (metaEnumType && typeof metaEnumType === 'object') {
+        try {
+            isMetaEnum = cc.Enum.isEnum(metaEnumType);
+            if (isMetaEnum) metaEnumList = cc.Enum.getList(metaEnumType).map(e => ({ name: e.name, value: e.value }));
+        } catch { isMetaEnum = false; metaEnumList = null; }
+    }
+    dump.type = dump.type || (isMetaEnum ? 'Enum' :
+        rawValue && typeof rawValue === 'object' ? _runtimeClassName(rawValue.constructor) :
+        typeof rawValue === 'number' ? 'Float' : typeof rawValue === 'boolean' ? 'Boolean' : typeof rawValue === 'string' ? 'String' : 'Unknown');
+    if (isMetaEnum && metaEnumList && !dump.enumList) {
+        dump.enumList = metaEnumList;
+    }
+    dump.readonly = !!meta.readonly || !!(descriptor && ((descriptor.get && !descriptor.set) || descriptor.writable === false));
+    dump.visible = true;
+    try { dump.visible = typeof meta.visible === 'function' ? !!meta.visible.call(owner) : meta.visible !== false; } catch {}
+    if (descriptor && descriptor.get) {
+        dump.isGetter = true;
+        dump.hasSetter = typeof descriptor.set === 'function';
+    }
+    dump.value = value;
+    if (rawValue instanceof cc.Asset) dump.extends = ['cc.Asset'];
+    if (rawValue instanceof cc.Node) dump.extends = ['cc.Node'];
+    if (rawValue instanceof cc.Component) dump.extends = ['cc.Component'];
+    if (_isRealCurve(rawValue)) {
+        dump.type = 'cc.RealCurve';
+        dump.extends = ['cc.RealCurve'];
+        dump.value = {
+            preExtrap: value.__value__.preExtrapolation,
+            postExtrap: value.__value__.postExtrapolation,
+            keyFrames: value.__value__.keyFrames
+        };
+    }
+    if (rawValue && typeof rawValue === 'object' && !seen.has(rawValue)) {
+        seen.add(rawValue);
+        try {
+            if (Array.isArray(rawValue)) {
+                dump.isArray = true;
+                const type = Array.isArray(meta.type) ? meta.type[0] : meta.ctor || meta.type;
+                dump.value = Array.from(rawValue, (item, index) => _runtimePropertyDump(item, value && value[index], { type }, rawValue, String(index), seen));
+                dump.elementTypeData = dump.value.length ? { ...dump.elementTypeData, ...dump.value[0] } :
+                    { ..._runtimeMetadata({ type }), value: null };
+            } else if (value && value.__type__ && value.__value__ && !_isRealCurve(rawValue)) {
+                dump.value = {};
+                for (const child of Object.keys(value.__value__)) {
+                    dump.value[child] = _runtimePropertyDump(rawValue[child], value.__value__[child], _runtimePropertyAttrs(rawValue, child), rawValue, child, seen);
+                }
+            }
+        } finally { seen.delete(rawValue); }
+    }
+    return dump;
+}
+
+function _captureRuntimeState(instance, className) {
+    const values = _extractLiveValues(instance);
+    const declaredEditorProps = _getEditorPropsOfClass(instance.constructor, instance);
+    const editorProps = {};
+    const dump = { type: className || _runtimeClassName(instance.constructor), value: {} };
+    const visibility = {};
+    const getters = {};
+    const arrayVisibility = {};
+    const arrayGetters = {};
+    for (const key of Object.keys(values)) {
+        const meta = _runtimePropertyAttrs(instance, key);
+        const property = _runtimePropertyDump(instance[key], values[key], meta, instance, key, new Set([instance]));
+        dump.value[key] = property;
+        visibility[key] = property.visible;
+        if (property.isGetter) getters[key] = values[key];
+        if (declaredEditorProps[key]) editorProps[key] = { ..._runtimeMetadata(declaredEditorProps[key]), ...property };
+        if (property.isArray && Array.isArray(property.value)) {
+            arrayVisibility[key] = property.value.map(item => Object.fromEntries(Object.entries(item.value || {}).filter(([, child]) => child && typeof child === 'object').map(([name, child]) => [name, child.visible !== false])));
+            arrayGetters[key] = property.value.map(item => Object.fromEntries(Object.entries(item.value || {}).filter(([, child]) => child && child.isGetter).map(([name, child]) => [name, child.value])));
+        }
+    }
+    return { isPreview: true, found: true, values, editorProps, dump, visibility, getters, arrayVisibility, arrayGetters,
+        enumLists: _serializeRuntimeValue(_extractInstanceAttrs(instance)) || {} };
 }
 
 // ─── Helpers: Deep Property Mutator ───
@@ -1618,59 +1709,513 @@ async function setDeepProperty(target, pathStr, value) {
     return true;
 }
 
-// ─── Live Preview State Snapshot & Broadcast ───
+// ─── Selected Preview Subscriptions ───
 
-function createLiveSnapshot() {
-    const snapshot = {};
-    
-    // 1. Scan globalThis._$pTSAssets (grouped by name -> by uuid -> instance)
+let _previewSessionId = null;
+let _previewSyncInterval = null;
+const _previewObservers = new Map();
+const _previewObserverEpochs = new Map();
+let _previewMessage = null;
+let _previewControlIpc = null;
+
+function _sendPreviewMessage(method, payload) {
     try {
-        const pTSAssets = globalThis['_$pTSAssets'];
-        if (pTSAssets && typeof pTSAssets === 'object') {
-            for (const name of Object.keys(pTSAssets)) {
-                const byUuid = pTSAssets[name];
-                if (byUuid && typeof byUuid === 'object') {
-                    for (const uuid of Object.keys(byUuid)) {
-                        const inst = byUuid[uuid];
-                        if (inst) {
-                            const vals = _extractLiveValues(inst);
-                            snapshot[uuid] = {
-                                uuid: uuid,
-                                name: name,
-                                values: vals
-                            };
-                            if (!snapshot[name]) {
-                                snapshot[name] = snapshot[uuid];
-                            }
+        if (method === 'preview-session') {
+            if (!_previewControlIpc) return false;
+            _previewControlIpc.send('pts-asset:preview-session', payload);
+        } else {
+            if (!_previewMessage || typeof _previewMessage.send !== 'function') return false;
+            _previewMessage.send('pts-asset', method, payload);
+        }
+        return true;
+    } catch (err) {
+        console.warn(`[pTS-Core] Failed to send ${method}:`, err);
+        return false;
+    }
+}
+
+function _announcePreviewSession() {
+    if (_previewSessionId) _sendPreviewMessage('preview-session', { sessionId: _previewSessionId, running: true });
+}
+
+function _focusRuntimeInstance(instance) {
+    try { instance.onFocusInEditor?.(); } catch (err) {
+        console.error('[pTS-Core] Error in runtime onFocusInEditor:', err);
+    }
+}
+
+function _publishRuntimeObserver(subscription) {
+    if (!isPreviewModeRunning() || _previewObservers.get(subscription.observerId) !== subscription) return;
+    const previous = subscription.instance;
+    const instance = getLiveInstance(subscription.uuid, subscription.className, subscription.observerId);
+    if (instance && previous !== instance) _focusRuntimeInstance(instance);
+    const state = instance ? _captureRuntimeState(instance, subscription.className) : { isPreview: true, found: false };
+    const signature = JSON.stringify(state);
+    if (signature === subscription.signature) return state;
+    if (_sendPreviewMessage('sync-preview-data', {
+        sessionId: _previewSessionId,
+        observerId: subscription.observerId,
+        subscriptionId: subscription.subscriptionId,
+        uuid: subscription.uuid,
+        ...state
+    })) subscription.signature = signature;
+    return state;
+}
+
+function _updatePreviewTimer() {
+    const hasObservers = (_previewObservers.size > 0 || _pTS_animgraphObservers.size > 0);
+    if (hasObservers && _previewSessionId && !_previewSyncInterval) {
+        _previewSyncInterval = setInterval(() => {
+            for (const subscription of _previewObservers.values()) {
+                try { _publishRuntimeObserver(subscription); } catch (err) {
+                    console.warn('[pTS-Core] Failed to inspect selected runtime instance:', err);
+                }
+            }
+            for (const subscription of _pTS_animgraphObservers.values()) {
+                try { _pTS_publishAnimGraphObserver(subscription); } catch (err) {
+                    console.warn('[pTS-Core] Failed to inspect selected animgraph instance:', err);
+                }
+            }
+        }, 200);
+    } else if (!hasObservers && _previewSyncInterval) {
+        clearInterval(_previewSyncInterval);
+        _previewSyncInterval = null;
+    }
+}
+
+function _observeRuntime(info) {
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning() || !info.observerId) return;
+    const previous = _previewObservers.get(info.observerId);
+    const epoch = _previewObserverEpochs.get(info.observerId);
+    if (!Number.isSafeInteger(info.subscriptionId) || (epoch !== undefined &&
+        (info.subscriptionId < epoch || (!previous && info.subscriptionId === epoch)))) return;
+    _previewObserverEpochs.set(info.observerId, info.subscriptionId);
+    if (!info.uuid) {
+        _previewObservers.delete(info.observerId);
+    } else if (!previous || previous.uuid !== info.uuid || previous.subscriptionId !== info.subscriptionId) {
+        const subscription = {
+            observerId: info.observerId, subscriptionId: info.subscriptionId,
+            uuid: info.uuid, className: info.className, instance: null, signature: null
+        };
+        _previewObservers.set(info.observerId, subscription);
+        _publishRuntimeObserver(subscription);
+    }
+    _updatePreviewTimer();
+}
+
+function _runtimeReadonly(target, key) {
+    const descriptor = _findPropertyDescriptor(target, key);
+    if (descriptor && ((descriptor.get && !descriptor.set) || descriptor.writable === false)) return true;
+    return !!_runtimePropertyAttrs(target, key).readonly;
+}
+
+async function _resolveRuntimeEdit(value, currentValue, type, isCurrent) {
+    const ctor = Array.isArray(type) ? type[0] : type;
+    if (typeof ctor === 'function' && (ctor === cc.Node || ctor === cc.Component || ctor.prototype instanceof cc.Node || ctor.prototype instanceof cc.Component)) {
+        throw new Error('Runtime scene references are locate-only');
+    }
+    const assetType = currentValue instanceof cc.Asset || (typeof ctor === 'function' && (ctor === cc.Asset || cc.js.isChildClassOf(ctor, cc.Asset)));
+    if (value === null) return null;
+    if (Array.isArray(value)) {
+        const result = [];
+        for (let i = 0; i < value.length; i++) {
+            result.push(await _resolveRuntimeEdit(value[i], currentValue && currentValue[i], ctor, isCurrent));
+            if (!isCurrent()) throw new Error('Runtime selection changed');
+        }
+        return result;
+    }
+    if (assetType) {
+        const uuid = typeof value === 'string' ? value : value && (value.uuid || value.__uuid__ || value._uuid || value.__value__?.uuid);
+        if (!uuid) throw new Error('Invalid runtime asset reference');
+        const cached = cc.assetManager.assets.get(uuid);
+        if (cached instanceof cc.Asset) return cached;
+        return new Promise((resolve, reject) => {
+            cc.assetManager.loadAny({ uuid }, (err, asset) => {
+                if (!isCurrent()) reject(new Error('Runtime selection changed'));
+                else if (err || !(asset instanceof cc.Asset)) reject(err || new Error(`Asset ${uuid} is unavailable`));
+                else resolve(asset);
+            });
+        });
+    }
+    if (currentValue && cc.ValueType && currentValue instanceof cc.ValueType && value && typeof value === 'object') {
+        const result = currentValue.clone();
+        const fields = value.__value__ || value;
+        for (const key of Object.keys(result)) {
+            if (Object.prototype.hasOwnProperty.call(fields, key)) {
+                result[key] = await _resolveRuntimeEdit(fields[key], result[key], null, isCurrent);
+                if (!isCurrent()) throw new Error('Runtime selection changed');
+            }
+        }
+        return result;
+    }
+    if (typeof currentValue === 'number' && typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) return Number(value);
+    return value;
+}
+
+async function _setRuntimeProperty(info) {
+    const subscription = info && _previewObservers.get(info.observerId);
+    if (!subscription || info.sessionId !== _previewSessionId || info.subscriptionId !== subscription.subscriptionId || info.uuid !== subscription.uuid) {
+        return { success: false, error: 'Runtime subscription is no longer active' };
+    }
+    const sessionId = _previewSessionId;
+    const instance = getLiveInstance(info.uuid, info.className, info.observerId);
+    if (!instance) return { success: false, error: 'Waiting for instance live' };
+    const isCurrent = () => sessionId === _previewSessionId && _previewObservers.get(info.observerId) === subscription && _isHydratedLiveAsset(instance, info.uuid);
+    const parts = String(info.propPath || '').split('.');
+    if (parts.some(key => !key || key === '__proto__' || key === 'constructor' || key === 'prototype')) return { success: false, error: 'Invalid runtime property path' };
+    let target = instance;
+    let inheritedType;
+    try {
+        for (let i = 0; i < parts.length; i++) {
+            const key = parts[i];
+            if (!target || typeof target !== 'object') throw new Error('Runtime property target is unavailable');
+            const mathType = cc.ValueType && target instanceof cc.ValueType;
+            const declared = Array.isArray(target) ? /^\d+$/.test(key) : mathType ? Object.prototype.hasOwnProperty.call(target, key) : _runtimeKeys(target).includes(key);
+            if (!declared) throw new Error(`Property ${key} is not inspectable`);
+            if (_runtimeReadonly(target, key)) return { success: false, readonly: true, error: `Property ${key} is readonly` };
+            const propertyAttrs = _runtimePropertyAttrs(target, key);
+            const propertyType = propertyAttrs.ctor || propertyAttrs.type || inheritedType;
+            if (i < parts.length - 1) {
+                inheritedType = Array.isArray(propertyType) ? propertyType[0] : propertyType;
+                target = target[key];
+                if (target instanceof cc.Node || target instanceof cc.Component || target instanceof cc.Asset) throw new Error('Runtime references cannot be edited through their owner');
+            }
+        }
+        const key = parts[parts.length - 1];
+        const attrs = _runtimePropertyAttrs(target, key);
+        const previous = target[key];
+        if (previous instanceof cc.Node || previous instanceof cc.Component || (info.newValue && info.newValue.__runtimeReference__)) throw new Error('Runtime scene references are locate-only');
+        if (_isRealCurve(previous) || _isRealCurveProp(target.constructor, key)) {
+            if (!isCurrent()) throw new Error('Runtime selection changed');
+            const curve = _isRealCurve(previous) ? previous : new cc.RealCurve();
+            _decodeCurveValue(curve, info.newValue);
+            const descriptor = _findPropertyDescriptor(target, key);
+            if (curve !== previous || (descriptor && descriptor.set)) target[key] = curve;
+        } else {
+            const value = await _resolveRuntimeEdit(info.newValue, previous, attrs.ctor || attrs.type || inheritedType, isCurrent);
+            if (!isCurrent()) throw new Error('Runtime selection changed');
+            target[key] = value;
+        }
+        _focusRuntimeInstance(instance);
+        for (const observer of _previewObservers.values()) {
+            if (observer.uuid === info.uuid) _publishRuntimeObserver(observer);
+        }
+        return { success: true, ..._captureRuntimeState(instance, info.className) };
+    } catch (err) {
+        return { success: false, error: String(err) };
+    }
+}
+
+async function _onRuntimeProperty(info) {
+    const sessionId = _previewSessionId;
+    const subscription = info && _previewObservers.get(info.observerId);
+    if (!subscription || info.sessionId !== sessionId || info.subscriptionId !== subscription.subscriptionId || info.uuid !== subscription.uuid) return;
+    let result;
+    try {
+        result = await _setRuntimeProperty(info);
+    } catch (err) {
+        result = { success: false, error: String(err) };
+    }
+    if (sessionId !== _previewSessionId || _previewObservers.get(info.observerId) !== subscription) return;
+    if (!result.success) {
+        const instance = getLiveInstance(info.uuid, info.className, info.observerId);
+        try {
+            Object.assign(result, instance ? _captureRuntimeState(instance, info.className) : { isPreview: true, found: false });
+        } catch (err) {
+            result.error = `${result.error || 'Runtime edit failed'}; ${String(err)}`;
+        }
+    }
+    _sendPreviewMessage('runtime-property-result', {
+        sessionId, observerId: info.observerId, subscriptionId: info.subscriptionId, uuid: info.uuid, ...result
+    });
+}
+
+function _receivePreviewObservation(_event, info) {
+    _observeRuntime(info);
+}
+
+function _receiveRuntimeProperty(_event, info) {
+    void _onRuntimeProperty(info);
+}
+
+function _receiveLogInstance(_event, info) {
+    if (!info || !_previewSessionId || info.sessionId !== _previewSessionId) return;
+    const instance = getLiveInstance(info.uuid, info.className);
+    if (!instance) {
+        console.warn(`[pTS Logger] No live instance for ${info.className} (${info.uuid})`);
+        return;
+    }
+    console.log(`[pTS Logger] ${info.className} (${info.uuid}):`, instance);
+}
+
+const _pTS_animgraphObservers = new Map();
+
+function _pTS_findActiveAnimController(uuid) {
+    if (typeof cc === 'undefined' || !cc.director) return null;
+    const scene = cc.director.getScene();
+    if (!scene) return null;
+    const CtlClass = cc.js.getClassByName('cc.animation.AnimationController');
+    if (!CtlClass) return null;
+    const controllers = scene.getComponentsInChildren(CtlClass);
+    for (const ctl of controllers) {
+        const g = ctl.graph || ctl._graph;
+        if (!g) continue;
+        const gUuid = g._uuid || g.uuid;
+        if (gUuid === uuid) {
+            return ctl;
+        }
+    }
+    return null;
+}
+
+function _pTS_getNodeHierarchyPath(node) {
+    if (!node) return '';
+    const parts = [node.name];
+    let cur = node.parent;
+    while (cur && cur.parent) {
+        parts.unshift(cur.name);
+        cur = cur.parent;
+    }
+    return parts.join('/');
+}
+
+function _pTS_extractLiveVariables(ctl) {
+    const variables = [];
+    const varIter = (ctl._graphEval && typeof ctl._graphEval.getVariables === 'function')
+        ? ctl._graphEval.getVariables()
+        : (typeof ctl.getVariables === 'function' ? ctl.getVariables() : []);
+    for (const [name, desc] of varIter) {
+        const typeNum = desc.type !== undefined ? desc.type : 0;
+        const typeNames = ['Float', 'Integer', 'Boolean', 'Trigger'];
+        let val = undefined;
+        try {
+            val = typeof ctl.getValue === 'function' ? ctl.getValue(name) : (ctl._graphEval && typeof ctl._graphEval.getValue === 'function' ? ctl._graphEval.getValue(name) : undefined);
+        } catch (e) {}
+        variables.push({
+            name,
+            type: typeNum,
+            typeName: typeNames[typeNum] || 'Unknown',
+            value: val !== undefined ? val : false,
+            isTrigger: typeNum === 3
+        });
+    }
+    return variables;
+}
+
+function _pTS_extractLiveLayers(ctl) {
+    const layers = [];
+    const count = ctl.layerCount || (ctl._graphEval ? ctl._graphEval.layerCount : 0);
+    for (let i = 0; i < count; i++) {
+        let activeStatePath = null;
+        let progress = 0;
+        try {
+            const status = typeof ctl.getCurrentStateStatus === 'function' ? ctl.getCurrentStateStatus(i) : null;
+            if (status) {
+                progress = typeof status.progress === 'number' ? status.progress : 0;
+            }
+            const root = ctl._graphEval && ctl._graphEval._rootPoseNode;
+            const lsm = root && typeof root.getLayerTopLevelStateMachineEvaluation === 'function' && root.getLayerTopLevelStateMachineEvaluation(i);
+            if (lsm && lsm._currentNode && lsm._currentNode.__DEBUG_ID__) {
+                activeStatePath = lsm._currentNode.__DEBUG_ID__;
+            }
+        } catch (e) {}
+        const layerObj = ctl.graph && ctl.graph.layers && ctl.graph.layers[i];
+        layers.push({
+            index: i,
+            name: layerObj ? layerObj.name : `Layer ${i}`,
+            weight: typeof ctl.getLayerWeight === 'function' ? ctl.getLayerWeight(i) : 1.0,
+            activeStatePath,
+            progress
+        });
+    }
+    return layers;
+}
+
+function _pTS_extractLiveComponents(ctl) {
+    const components = {};
+    try {
+        const root = ctl._graphEval && ctl._graphEval._rootPoseNode;
+        if (!root || typeof root.getLayerTopLevelStateMachineEvaluation !== 'function') return components;
+        const count = ctl.layerCount || (ctl._graphEval ? ctl._graphEval.layerCount : 0);
+        for (let l = 0; l < count; l++) {
+            const lsm = root.getLayerTopLevelStateMachineEvaluation(l);
+            const motionStates = lsm && lsm._motionStates ? lsm._motionStates : [];
+            for (const ms of motionStates) {
+                const path = ms.__DEBUG_ID__;
+                if (!path) continue;
+                const rawComps = ms.components && ms.components._components ? ms.components._components : [];
+                for (const comp of rawComps) {
+                    const compCls = cc.js.getClassName(comp);
+                    const values = {};
+                    for (const k of Object.keys(comp)) {
+                        if (!k.startsWith('_') && typeof comp[k] !== 'function') {
+                            values[k] = _serializeRuntimeValue(comp[k], false, new Set(), 0);
                         }
                     }
+                    components[path] = components[path] || {};
+                    components[path][compCls] = values;
                 }
             }
         }
     } catch (e) {}
+    return components;
+}
 
-    // 2. Scan __pTS_LIVE_ASSETS__ Map
+function _pTS_captureAnimGraphRuntimeState(uuid) {
+    if (!isPreviewModeRunning()) return { isPreview: false, found: false, uuid };
+    const ctl = _pTS_findActiveAnimController(uuid);
+    if (!ctl) return { isPreview: true, found: false, uuid };
+    return {
+        isPreview: true,
+        found: true,
+        uuid,
+        activeNode: {
+            name: ctl.node.name,
+            uuid: ctl.node.uuid,
+            path: _pTS_getNodeHierarchyPath(ctl.node)
+        },
+        controllerClass: cc.js.getClassName(ctl),
+        variables: _pTS_extractLiveVariables(ctl),
+        layers: _pTS_extractLiveLayers(ctl),
+        components: _pTS_extractLiveComponents(ctl)
+    };
+}
+
+function _pTS_publishAnimGraphObserver(subscription) {
+    const state = _pTS_captureAnimGraphRuntimeState(subscription.uuid);
+    const signature = JSON.stringify(state);
+    if (signature === subscription.signature) return state;
+    if (_previewControlIpc) {
+        _previewControlIpc.send('pts-animgraph:sync-animgraph', {
+            sessionId: _previewSessionId,
+            observerId: subscription.observerId,
+            subscriptionId: subscription.subscriptionId,
+            uuid: subscription.uuid,
+            ...state
+        });
+        subscription.signature = signature;
+    }
+    return state;
+}
+
+function _pTS_announceAnimGraphPreviewSession() {
+    if (_previewSessionId && _previewControlIpc) {
+        _previewControlIpc.send('pts-animgraph:preview-session', { sessionId: _previewSessionId, running: true });
+    }
+}
+
+function _pTS_receiveAnimGraphObservation(_event, info) {
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning() || !info.observerId) return;
+    if (!info.uuid) {
+        _pTS_animgraphObservers.delete(info.observerId);
+    } else {
+        const sub = {
+            observerId: info.observerId,
+            uuid: info.uuid,
+            subscriptionId: info.subscriptionId,
+            signature: ''
+        };
+        _pTS_animgraphObservers.set(info.observerId, sub);
+        _pTS_publishAnimGraphObserver(sub);
+    }
+    _updatePreviewTimer();
+}
+
+function _pTS_receiveAnimGraphSetVariable(_event, info) {
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()) return;
+    const ctl = _pTS_findActiveAnimController(info.uuid);
+    if (!ctl) return;
     try {
-        const liveMap = globalThis['__pTS_LIVE_ASSETS__'];
-        if (liveMap && typeof liveMap.forEach === 'function') {
-            liveMap.forEach((inst, uuid) => {
-                if (inst && !snapshot[uuid]) {
-                    const vals = _extractLiveValues(inst);
-                    const name = inst.name || (inst.constructor ? inst.constructor.name : '');
-                    snapshot[uuid] = {
-                        uuid: uuid,
-                        name: name,
-                        values: vals
-                    };
-                    if (name && !snapshot[name]) {
-                        snapshot[name] = snapshot[uuid];
-                    }
-                }
-            });
+        if (typeof ctl.setValue === 'function') {
+            ctl.setValue(info.name, info.value);
+        } else if (ctl._graphEval && typeof ctl._graphEval.setValue === 'function') {
+            ctl._graphEval.setValue(info.name, info.value);
         }
-    } catch (e) {}
+    } catch (e) {
+        console.warn(`[pTS-Core] Failed to set animgraph variable ${info.name}:`, e);
+    }
+    for (const sub of _pTS_animgraphObservers.values()) {
+        if (sub.uuid === info.uuid) _pTS_publishAnimGraphObserver(sub);
+    }
+}
 
-    return snapshot;
+function _pTS_receiveAnimGraphSetLayerWeight(_event, info) {
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()) return;
+    const ctl = _pTS_findActiveAnimController(info.uuid);
+    if (!ctl) return;
+    try {
+        if (typeof ctl.setLayerWeight === 'function') {
+            ctl.setLayerWeight(info.layerIndex, info.weight);
+        } else if (ctl._graphEval && typeof ctl._graphEval.setLayerWeight === 'function') {
+            ctl._graphEval.setLayerWeight(info.layerIndex, info.weight);
+        }
+    } catch (e) {
+        console.warn(`[pTS-Core] Failed to set animgraph layer weight:`, e);
+    }
+    for (const sub of _pTS_animgraphObservers.values()) {
+        if (sub.uuid === info.uuid) _pTS_publishAnimGraphObserver(sub);
+    }
+}
+
+function _pTS_receiveAnimGraphLogRuntime(_event, info) {
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()) return;
+    const ctl = _pTS_findActiveAnimController(info.uuid);
+    if (!ctl) {
+        console.warn(`[pTS-AnimGraph Logger] No active AnimationController playing graph ${info.uuid}`);
+        return;
+    }
+    console.log(`[pTS-AnimGraph Logger] Active AnimationController on "${_pTS_getNodeHierarchyPath(ctl.node)}":`, ctl, 'GraphEval:', ctl._graphEval);
+}
+
+function _stopPreviewSession() {
+    const sessionId = _previewSessionId;
+    _previewSessionId = null;
+    _previewObservers.clear();
+    _previewObserverEpochs.clear();
+    _pTS_animgraphObservers.clear();
+    clearInterval(_previewSyncInterval);
+    _previewSyncInterval = null;
+    if (sessionId) {
+        _sendPreviewMessage('preview-session', { sessionId, running: false });
+        if (_previewControlIpc) {
+            _previewControlIpc.send('pts-animgraph:preview-session', { sessionId, running: false });
+        }
+    }
+    if (_previewControlIpc) {
+        _previewControlIpc.removeListener('pts-asset:observe-runtime', _receivePreviewObservation);
+        _previewControlIpc.removeListener('pts-asset:set-runtime-property', _receiveRuntimeProperty);
+        _previewControlIpc.removeListener('pts-asset:log-runtime-instance', _receiveLogInstance);
+        _previewControlIpc.removeListener('pts-asset:request-preview-session', _announcePreviewSession);
+        _previewControlIpc.removeListener('pts-animgraph:observe-runtime', _pTS_receiveAnimGraphObservation);
+        _previewControlIpc.removeListener('pts-animgraph:set-variable', _pTS_receiveAnimGraphSetVariable);
+        _previewControlIpc.removeListener('pts-animgraph:set-layer-weight', _pTS_receiveAnimGraphSetLayerWeight);
+        _previewControlIpc.removeListener('pts-animgraph:log-runtime', _pTS_receiveAnimGraphLogRuntime);
+        _previewControlIpc.removeListener('pts-animgraph:request-preview-session', _pTS_announceAnimGraphPreviewSession);
+    }
+    if (typeof window !== 'undefined') window.removeEventListener('beforeunload', _stopPreviewSession);
+    _previewMessage = null;
+    _previewControlIpc = null;
+}
+
+function _startPreviewSession() {
+    _stopPreviewSession();
+    if (typeof window === 'undefined' || !window.isPreviewProcess) return;
+    const editor = globalThis.Editor || window.Editor;
+    _previewMessage = editor && editor.Message;
+    _previewSessionId = `pts-preview-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    _previewControlIpc = require('electron').ipcRenderer;
+    _previewControlIpc.on('pts-asset:observe-runtime', _receivePreviewObservation);
+    _previewControlIpc.on('pts-asset:set-runtime-property', _receiveRuntimeProperty);
+    _previewControlIpc.on('pts-asset:log-runtime-instance', _receiveLogInstance);
+    _previewControlIpc.on('pts-asset:request-preview-session', _announcePreviewSession);
+    _previewControlIpc.on('pts-animgraph:observe-runtime', _pTS_receiveAnimGraphObservation);
+    _previewControlIpc.on('pts-animgraph:set-variable', _pTS_receiveAnimGraphSetVariable);
+    _previewControlIpc.on('pts-animgraph:set-layer-weight', _pTS_receiveAnimGraphSetLayerWeight);
+    _previewControlIpc.on('pts-animgraph:log-runtime', _pTS_receiveAnimGraphLogRuntime);
+    _previewControlIpc.on('pts-animgraph:request-preview-session', _pTS_announceAnimGraphPreviewSession);
+    window.addEventListener('beforeunload', _stopPreviewSession);
+    _announcePreviewSession();
+    _pTS_announceAnimGraphPreviewSession();
 }
 
 function isChildOfPtsAsset(cls, baseCtor) {
@@ -1986,7 +2531,6 @@ _hookNodeGetComponent();
 _hookQueryClasses();
 _hookQueryNodeTree();
 
-let _previewSyncInterval = null;
 
 // ─── Lifecycle Exports ───
 
@@ -2027,26 +2571,11 @@ exports.load = function() {
     _hookQueryClasses();
     _hookQueryNodeTree();
 
-    if (isPreview) {
-        console.log('[pTS-Core] Initializing live preview sync ticker in [PreviewInEditor]...');
-        if (_previewSyncInterval) clearInterval(_previewSyncInterval);
-        _previewSyncInterval = setInterval(() => {
-            try {
-                const snapshot = createLiveSnapshot();
-                if (typeof Editor !== 'undefined' && Editor.Message && typeof Editor.Message.send === 'function') {
-                    Editor.Message.send('pts-asset', 'sync-preview-data', snapshot);
-                }
-            } catch (e) {}
-        }, 300);
-    }
+    if (isPreview) _startPreviewSession();
 };
 
 exports.unload = function() {
-    console.log('[pTS-Core] Scene script unloaded');
-    if (_previewSyncInterval) {
-        clearInterval(_previewSyncInterval);
-        _previewSyncInterval = null;
-    }
+    _stopPreviewSession();
 };
 
 // ─── Method Registry ───
@@ -2239,7 +2768,7 @@ exports.methods = {
         if (uuid) {
             instance = getLiveInstance(uuid, className);
         }
-        if (!instance && className) {
+        if (!instance && className && !isPreviewModeRunning()) {
             const ctor = cc.js.getClassByName(className);
             if (ctor) {
                 instance = new ctor();
@@ -2272,10 +2801,10 @@ exports.methods = {
         const info = {
             hasGlobalThis: typeof globalThis !== 'undefined',
             pTS_IS_PREVIEW: typeof globalThis !== 'undefined' ? globalThis.__pTS_IS_PREVIEW__ : undefined,
-            hasLiveAssetsMap: typeof globalThis !== 'undefined' && !!globalThis['__pTS_LIVE_ASSETS__'],
-            liveAssetsCount: (typeof globalThis !== 'undefined' && globalThis['__pTS_LIVE_ASSETS__']?.size) || 0,
-            has_pTSAssets: typeof globalThis !== 'undefined' && !!globalThis['_$pTSAssets'],
-            _pTSAssetsKeys: typeof globalThis !== 'undefined' && globalThis['_$pTSAssets'] ? Object.keys(globalThis['_$pTSAssets']) : [],
+            sessionId: _previewSessionId,
+            observerCount: _previewObservers.size,
+            retainedInstanceCount: [..._previewObservers.values()].filter(observer => !!observer.instance).length,
+            observerUuids: [..._previewObservers.values()].map(observer => observer.uuid),
             gamePaused: typeof cc !== 'undefined' && cc.game ? cc.game.isPaused() : undefined,
             game_paused: typeof cc !== 'undefined' && cc.game ? cc.game._paused : undefined,
             sceneName: typeof cc !== 'undefined' && cc.director?.getScene() ? cc.director.getScene().name : undefined,
@@ -2285,217 +2814,165 @@ exports.methods = {
         return info;
     },
 
-    get_pts_runtime_state(uuid, className) {
-        const isPreview = isPreviewModeRunning();
-        if (!isPreview) {
-            return { isPreview: false };
-        }
+    get_pts_runtime_state(uuid, className, observerId) {
+        if (!isPreviewModeRunning()) return { isPreview: false, found: false };
+        const instance = getLiveInstance(uuid, className, observerId);
+        return instance ? _captureRuntimeState(instance, className) : { isPreview: true, found: false };
+    },
 
+    set_pts_runtime_property(uuid, className, propPath, newValue, observerId, subscriptionId, sessionId) {
+        const info = uuid && typeof uuid === 'object' ? uuid :
+            { uuid, className, propPath, newValue, observerId, subscriptionId, sessionId };
+        return _setRuntimeProperty(info);
+    },
+
+    log_instance(uuid, className) {
+        if (!isPreviewModeRunning()) { console.warn('[pTS-Core] log_instance: preview not running'); return; }
         const instance = getLiveInstance(uuid, className);
-        if (!instance) {
-            return { isPreview: true, found: false };
+        if (!instance) { console.warn(`[pTS-Core] log_instance: no live instance for ${className} (${uuid})`); return; }
+        console.log(`[pTS Logger] ${className} (${uuid}):`, instance);
+    },
+
+    async pTS_get_animgraph_dump(uuid) {
+        if (!uuid) return null;
+        let graphAsset = cc.assetManager.assets.get(uuid);
+        if (!graphAsset) {
+            graphAsset = await new Promise(resolve => {
+                cc.assetManager.loadAny({ uuid }, (err, asset) => {
+                    resolve(err ? null : asset);
+                });
+            });
+        }
+        if (!graphAsset) return null;
+
+        const layers = [];
+        const rawLayers = graphAsset.layers || graphAsset._layers || [];
+        for (let lIdx = 0; lIdx < rawLayers.length; lIdx++) {
+            const l = rawLayers[lIdx];
+            const states = [];
+            const transitions = [];
+            const walkSM = (sm, path) => {
+                if (!sm || typeof sm.states !== 'function') return;
+                for (const st of sm.states()) {
+                    const statePath = path + '/' + st.name;
+                    const comps = [];
+                    const rawComps = st._components || st.components || [];
+                    for (const c of rawComps) {
+                        const ctor = c.constructor;
+                        const attrs = cc.Class.Attr.getClassAttrs(ctor) || {};
+                        const delim = cc.Class.Attr.DELIMETER || '$_$';
+                        const props = {};
+                        const propAttrs = {};
+                        for (const [attrKey, val] of Object.entries(attrs)) {
+                            const parts = attrKey.split(delim);
+                            if (parts.length === 2) {
+                                const p = parts[0], a = parts[1];
+                                propAttrs[p] = propAttrs[p] || {};
+                                propAttrs[p][a] = val;
+                            }
+                        }
+                        for (const p of Object.keys(propAttrs)) {
+                            props[p] = c[p];
+                        }
+                        if (ctor.__editor_props__) {
+                            for (const [epK, epV] of Object.entries(ctor.__editor_props__)) {
+                                props[epK] = c[epK];
+                                propAttrs[epK] = Object.assign({}, propAttrs[epK] || {}, epV);
+                            }
+                        }
+                        comps.push({
+                            className: cc.js.getClassName(c),
+                            props,
+                            attrs: propAttrs
+                        });
+                    }
+                    let clipName = null;
+                    let clipUuid = null;
+                    if (st.motion && st.motion.clip) {
+                        clipName = st.motion.clip.name || null;
+                        clipUuid = st.motion.clip._uuid || null;
+                    }
+                    states.push({
+                        name: st.name,
+                        id: (st.__editorExtras__ && st.__editorExtras__.id) || st.name,
+                        path: statePath,
+                        type: st.name === 'Entry' ? 'Entry' : st.name === 'Exit' ? 'Exit' : st.name === 'Any' ? 'Any' : (st.stateMachine || st._stateMachine) ? 'SubStateMachine' : 'Motion',
+                        centerX: (st.__editorExtras__ && st.__editorExtras__.centerX) !== undefined ? st.__editorExtras__.centerX : 0,
+                        centerY: (st.__editorExtras__ && st.__editorExtras__.centerY) !== undefined ? st.__editorExtras__.centerY : 0,
+                        speed: st.speed !== undefined ? st.speed : 1,
+                        speedMultiplier: st.speedMultiplier || '',
+                        speedMultiplierEnabled: !!st.speedMultiplierEnabled,
+                        clipName,
+                        clipUuid,
+                        components: comps
+                    });
+                    const nested = st.stateMachine || st._stateMachine;
+                    if (nested) walkSM(nested, statePath);
+                }
+                if (typeof sm.transitions === 'function') {
+                    for (const tr of sm.transitions()) {
+                        transitions.push({
+                            from: tr.from ? tr.from.name : '',
+                            to: tr.to ? tr.to.name : '',
+                            duration: tr.duration !== undefined ? tr.duration : 0,
+                            hasExitCondition: !!tr.exitConditionEnabled
+                        });
+                    }
+                }
+            };
+            walkSM(l.stateMachine, l.name);
+            layers.push({
+                index: lIdx,
+                name: l.name,
+                weight: l.weight !== undefined ? l.weight : 1.0,
+                additive: !!l.additive,
+                mask: !!l.mask,
+                states,
+                transitions
+            });
         }
 
-        const ctor = instance.constructor || (className ? cc.js.getClassByName(className) : null);
-        const dump = _dumpLiveInstance(instance, className);
-        const values = _extractLiveValues(instance, className);
-        const rawEditorProps = (ctor && ctor.__editor_props__) || (instance && instance.__editor_props__) || {};
-        const editorProps = {};
-        for (const [k, meta] of Object.entries(rawEditorProps)) {
-            if (_hasProperty(instance, k) || (ctor && ctor.prototype && _hasProperty(ctor.prototype, k))) {
-                editorProps[k] = meta;
+        const variables = [];
+        if (graphAsset.variables) {
+            for (const [vName, vObj] of graphAsset.variables) {
+                const typeNum = vObj._type !== undefined ? vObj._type : (cc.js.getClassName(vObj) === 'cc.animation.TriggerVariable' ? 3 : 0);
+                const typeNames = ['Float', 'Integer', 'Boolean', 'Trigger'];
+                variables.push({
+                    name: vName,
+                    type: typeNum,
+                    typeName: typeNames[typeNum] || 'Unknown',
+                    value: vObj._value !== undefined ? vObj._value : false,
+                    isTrigger: typeNum === 3
+                });
             }
         }
+
         return {
-            isPreview: true,
-            found: true,
-            dump: dump,
-            values: values,
-            editorProps: editorProps
+            uuid,
+            name: graphAsset.name || '',
+            layerCount: layers.length,
+            layers,
+            variables
         };
     },
 
-    set_pts_runtime_property(uuid, className, propPath, newValue) {
-        const instance = getLiveInstance(uuid, className);
-        if (!instance) {
-            return { success: false, error: `Live runtime instance not found for uuid: ${uuid}` };
-        }
+    pTS_get_animgraph_runtime_state(uuid) {
+        return _pTS_captureAnimGraphRuntimeState(uuid);
+    },
 
-        const parts = String(propPath).split('.');
-        let target = instance;
-        for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i];
-            if (target && target[part] !== undefined) {
-                target = target[part];
-            }
-        }
-        const propName = parts[parts.length - 1];
+    pTS_set_animgraph_variable(uuid, name, value) {
+        _pTS_receiveAnimGraphSetVariable(null, { sessionId: _previewSessionId, uuid, name, value });
+        return { success: true };
+    },
 
-        if (!target) {
-            return { success: false, error: `Target not found for property path: ${propPath}` };
-        }
+    pTS_set_animgraph_layer_weight(uuid, layerIndex, weight) {
+        _pTS_receiveAnimGraphSetLayerWeight(null, { sessionId: _previewSessionId, uuid, layerIndex, weight });
+        return { success: true };
+    },
 
-        // 1. Check if getter-only without setter
-        const desc = _findPropertyDescriptor(target, propName);
-        if (desc && typeof desc.get === 'function' && typeof desc.set !== 'function') {
-            console.warn(`[pTS-Core] Runtime modification rejected: ${propPath} is getter-only (readonly)`);
-            return { success: false, readonly: true, error: `Property ${propPath} is getter-only (readonly)` };
-        }
-
-        // 2. Check @property({ readonly: true }) in cc.Class attributes
-        const targetCtor = target.constructor;
-        if (targetCtor && typeof cc !== 'undefined' && cc.Class && cc.Class.Attr && typeof cc.Class.Attr.getClassAttrs === 'function') {
-            try {
-                const attrs = cc.Class.Attr.getClassAttrs(targetCtor);
-                if (attrs) {
-                    const del = cc.Class.Attr.DELIMETER || '$_$';
-                    if (attrs[propName + del + 'readonly'] === true || attrs[propName + '$_$readonly'] === true) {
-                        console.warn(`[pTS-Core] Runtime modification rejected: ${propPath} is marked readonly in @property`);
-                        return { success: false, readonly: true, error: `Property ${propPath} is marked readonly in @property` };
-                    }
-                }
-            } catch (e) {}
-        }
-
-        // 3. Apply the property update directly to live instance in memory
-        try {
-            if (Array.isArray(target) && !isNaN(Number(propName))) {
-                const idx = Number(propName);
-                let valToAssign = newValue;
-                let u = '';
-                if (typeof newValue === 'string' && (newValue.includes('-') || newValue.includes('@'))) {
-                    u = newValue;
-                } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue._uuid || newValue.__value__?.uuid || newValue.__value__?._uuid)) {
-                    u = newValue._uuid || newValue.uuid || newValue.__value__?._uuid || newValue.__value__?.uuid;
-                }
-                if (u) {
-                    const asset = (cc.assetManager && cc.assetManager.assets) ? cc.assetManager.assets.get(u) : null;
-                    valToAssign = asset || { _uuid: u, uuid: u };
-                    if (!asset && cc.assetManager && cc.assetManager.loadAny) {
-                        try { cc.assetManager.loadAny({ uuid: u }, () => {}); } catch (e) {}
-                    }
-                }
-                target[idx] = valToAssign;
-            } else if (_isRealCurve(target[propName]) || (target.constructor && _isRealCurveProp(target.constructor, propName)) || (newValue && (newValue.__type__ === 'cc.RealCurve' || Array.isArray(newValue.keyFrames) || Array.isArray(newValue.keys)))) {
-                let curveInst = target[propName];
-                if (!_isRealCurve(curveInst)) {
-                    if (typeof cc !== 'undefined' && cc.RealCurve) {
-                        curveInst = new cc.RealCurve();
-                        target[propName] = curveInst;
-                    }
-                }
-                if (_isRealCurve(curveInst)) {
-                    _decodeCurveValue(curveInst, newValue);
-                    const desc = _findPropertyDescriptor(target, propName);
-                    if (desc && typeof desc.set === 'function') {
-                        try {
-                            target[propName] = curveInst;
-                        } catch (e) {}
-                    }
-                } else {
-                    target[propName] = newValue;
-                }
-            } else if (Array.isArray(newValue)) {
-                const resolvedArr = [];
-                for (let i = 0; i < newValue.length; i++) {
-                    const item = newValue[i];
-                    let u = '';
-                    if (typeof item === 'string' && (item.includes('-') || item.includes('@'))) {
-                        u = item;
-                    } else if (item && typeof item === 'object' && (item.uuid || item._uuid || item.__value__?.uuid || item.__value__?._uuid)) {
-                        u = item._uuid || item.uuid || item.__value__?._uuid || item.__value__?.uuid;
-                    }
-                    if (u && typeof cc !== 'undefined' && cc.assetManager && cc.assetManager.assets) {
-                        const asset = cc.assetManager.assets.get(u);
-                        resolvedArr.push(asset || { _uuid: u, uuid: u });
-                        if (!asset && cc.assetManager.loadAny) {
-                            try { cc.assetManager.loadAny({ uuid: u }, () => {}); } catch (e) {}
-                        }
-                    } else {
-                        resolvedArr.push(item);
-                    }
-                }
-                const desc = _findPropertyDescriptor(target, propName);
-                if (desc && typeof desc.set === 'function') {
-                    try {
-                        target[propName] = resolvedArr;
-                    } catch (e) {}
-                } else {
-                    target[propName] = resolvedArr;
-                }
-            } else {
-                let u = '';
-                if (typeof newValue === 'string' && (newValue.includes('-') || newValue.includes('@'))) {
-                    u = newValue;
-                } else if (newValue && typeof newValue === 'object' && (newValue.uuid || newValue._uuid)) {
-                    u = newValue._uuid || newValue.uuid;
-                }
-                if (u && typeof cc !== 'undefined' && cc.assetManager && cc.assetManager.assets) {
-                    const asset = cc.assetManager.assets.get(u);
-                    if (asset) {
-                        target[propName] = asset;
-                    } else {
-                        target[propName] = newValue;
-                    }
-                } else {
-                    target[propName] = newValue;
-                }
-            }
-        } catch (setErr) {
-            console.error(`[pTS-Core] Error applying runtime property setter for ${propPath}:`, setErr);
-            return { success: false, error: String(setErr) };
-        }
-
-        // 4. Ensure backing field '_' + propName is synced if present
-        const backingKey = '_' + propName;
-        if (target && (backingKey in target || target.hasOwnProperty(backingKey))) {
-            try {
-                if (target[backingKey] === undefined || target[backingKey] === null || target[backingKey] === '') {
-                    target[backingKey] = _isRealCurve(target[propName]) ? target[propName] : newValue;
-                }
-            } catch (e) {}
-        }
-
-        // 5. Trigger onFocusInEditor if implemented on live instance
-        try {
-            if (typeof instance.onFocusInEditor === 'function') {
-                instance.onFocusInEditor();
-            }
-        } catch (e) {}
-
-        // 6. Extract updated values & dump from the live instance
-        const updatedDump = _dumpLiveInstance(instance, className);
-        const updatedValues = _extractLiveValues(instance, className);
-
-        // 7. Extract dynamic instance attributes (enumLists) & visibility
-        const enumLists = _extractInstanceAttrs(instance);
-        _cachedInstanceAttrs[className] = enumLists;
-        const evalResult = _evaluatePtsLive(className, updatedValues);
-
-        // 8. Immediately broadcast snapshot via Editor.Message so main process is in sync
-        const editor = (typeof globalThis !== 'undefined' && globalThis.Editor) || (typeof window !== 'undefined' && window.Editor);
-        if (editor && editor.Message && typeof editor.Message.send === 'function') {
-            try {
-                editor.Message.send('pts-asset', 'sync-preview-data', {
-                    [uuid]: {
-                        uuid: uuid,
-                        name: className,
-                        values: updatedValues
-                    }
-                });
-            } catch (e) {}
-        }
-
-        return {
-            success: true,
-            values: updatedValues,
-            dump: updatedDump,
-            enumLists: Object.assign({}, evalResult.enumLists || {}, enumLists),
-            visibility: evalResult.visibility,
-            arrayVisibility: evalResult.arrayVisibility,
-            getters: evalResult.getters,
-            arrayGetters: evalResult.arrayGetters
-        };
+    pTS_log_animgraph_runtime(uuid) {
+        _pTS_receiveAnimGraphLogRuntime(null, { sessionId: _previewSessionId, uuid });
+        return { success: true };
     },
 
     props(what) {
