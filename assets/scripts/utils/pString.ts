@@ -51,12 +51,21 @@ export function uuid(packs: number[] = null): string {
     return `${randomRangeInt(1000, 9999)}_${Date.now()}_${js.IDGenerator.global.getNewId()}`;
 }
 
+interface _IOpt {
+    positive?: string;
+    negative?: string;
+    fixed?: number;
+    integer?: boolean;
+}
+
 /**
  * Format number with K/M/B/T suffixes.
  * Time: O(1) - Constant number of units.
  */
-export function formatKMB(num: number, positive: string = "", negative: string = "-"): string {
+export function formatKMB(num: number, opt?: _IOpt): string {
     if (!num || isNaN(num)) return "0";
+    const { positive = "", negative = "-", fixed = 2, integer = false } = opt || {};
+
     const abs = Math.abs(num);
     const units = ["", "K", "M", "B", "T", "Q"];
     let unitIdx = 0;
@@ -67,7 +76,8 @@ export function formatKMB(num: number, positive: string = "", negative: string =
         unitIdx++;
     }
 
-    const str = (unitIdx === 0 ? abs : value).toFixed(2).replace(/\.?0+$/, "");
+    const _val = unitIdx === 0 ? abs : value;
+    const str = (integer ? Math.floor(_val) : _val).toFixed(fixed).replace(/\.?0+$/, "");
     return `${num > 0 ? positive : negative}${str}${units[unitIdx]}`;
 }
 
