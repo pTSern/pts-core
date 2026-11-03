@@ -1949,30 +1949,27 @@ function _receiveLogInstance(_event, info) {
 }
 
 const _pTS_animgraphObservers = new Map();
+const _pTS_animgraphObserverEpochs = new Map();
+// Cocos Creator 3.8.8 marionette/variable/basic.ts (not the Inspector enum order).
+const _pTS_animgraphVariableTypeNames = ['Float', 'Boolean', 'Trigger', 'Integer', 'Vec3', 'Quat'];
 
-function _pTS_findActiveAnimController(uuid) {
-    if (typeof cc === 'undefined' || !cc.director) return null;
+function _pTS_findAnimControllers(uuid) {
+    if (typeof cc === 'undefined' || !cc.director || !uuid) return [];
     const scene = cc.director.getScene();
-    if (!scene) return null;
     const CtlClass = cc.js.getClassByName('cc.animation.AnimationController');
-    if (!CtlClass) return null;
-    const controllers = scene.getComponentsInChildren(CtlClass);
-    for (const ctl of controllers) {
-        const g = ctl.graph || ctl._graph;
-        if (!g) continue;
-        const gUuid = g._uuid || g.uuid;
-        if (gUuid === uuid) {
-            return ctl;
-        }
-    }
-    return null;
+    if (!scene || !CtlClass) return [];
+    return scene.getComponentsInChildren(CtlClass).filter(ctl => {
+        if (!cc.isValid(ctl, true) || !ctl.node || !cc.isValid(ctl.node, true) || !ctl.uuid) return false;
+        const graph = ctl.graph;
+        return graph && (graph._uuid || graph.uuid) === uuid;
+    });
 }
 
 function _pTS_getNodeHierarchyPath(node) {
     if (!node) return '';
     const parts = [node.name];
     let cur = node.parent;
-    while (cur && cur.parent) {
+    while (cur) {
         parts.unshift(cur.name);
         cur = cur.parent;
     }
@@ -1981,22 +1978,19 @@ function _pTS_getNodeHierarchyPath(node) {
 
 function _pTS_extractLiveVariables(ctl) {
     const variables = [];
-    const varIter = (ctl._graphEval && typeof ctl._graphEval.getVariables === 'function')
-        ? ctl._graphEval.getVariables()
-        : (typeof ctl.getVariables === 'function' ? ctl.getVariables() : []);
+    const varIter = ctl._graphEval && typeof ctl.getVariables === 'function' ? ctl.getVariables() : [];
     for (const [name, desc] of varIter) {
-        const typeNum = desc.type !== undefined ? desc.type : 0;
-        const typeNames = ['Float', 'Integer', 'Boolean', 'Trigger'];
+        const typeNum = desc.type;
         let val = undefined;
         try {
-            val = typeof ctl.getValue === 'function' ? ctl.getValue(name) : (ctl._graphEval && typeof ctl._graphEval.getValue === 'function' ? ctl._graphEval.getValue(name) : undefined);
+            val = typeof ctl.getValue_experimental === 'function' ? ctl.getValue_experimental(name) : ctl.getValue(name);
         } catch (e) {}
         variables.push({
             name,
             type: typeNum,
-            typeName: typeNames[typeNum] || 'Unknown',
-            value: val !== undefined ? val : false,
-            isTrigger: typeNum === 3
+            typeName: _pTS_animgraphVariableTypeNames[typeNum] || 'Unknown',
+            value: _serializeRuntimeValue(val, false, new Set(), 0),
+            isTrigger: typeNum === 2
         });
     }
     return variables;
@@ -2041,7 +2035,7 @@ function _pTS_extractLiveComponents(ctl) {
             const lsm = root.getLayerTopLevelStateMachineEvaluation(l);
             const motionStates = lsm && lsm._motionStates ? lsm._motionStates : [];
             for (const ms of motionStates) {
-                const path = ms.__DEBUG_ID__;
+                const path = ms._publicState?.__DEBUG_ID__ || ms._privateState?.__DEBUG_ID__;
                 if (!path) continue;
                 const rawComps = ms.components && ms.components._components ? ms.components._components : [];
                 for (const comp of rawComps) {
@@ -2061,14 +2055,28 @@ function _pTS_extractLiveComponents(ctl) {
     return components;
 }
 
-function _pTS_captureAnimGraphRuntimeState(uuid) {
-    if (!isPreviewModeRunning()) return { isPreview: false, found: false, uuid };
-    const ctl = _pTS_findActiveAnimController(uuid);
-    if (!ctl) return { isPreview: true, found: false, uuid };
-    return {
-        isPreview: true,
-        found: true,
+function _pTS_captureAnimGraphRuntimeState(uuid, instanceId) {
+    const state = {
+        isPreview: isPreviewModeRunning(),
+        found: false,
         uuid,
+        instances: [],
+        instanceId: typeof instanceId === 'string' && instanceId ? instanceId : null
+    };
+    if (!state.isPreview) return state;
+    const controllers = _pTS_findAnimControllers(uuid);
+    state.instances = controllers.map(ctl => ({
+        id: ctl.uuid,
+        nodeUuid: ctl.node.uuid,
+        path: _pTS_getNodeHierarchyPath(ctl.node),
+        controllerClass: cc.js.getClassName(ctl)
+    }));
+    if (state.instanceId === null && controllers.length) state.instanceId = controllers[0].uuid;
+    const ctl = controllers.find(candidate => candidate.uuid === state.instanceId);
+    if (!ctl || !ctl._graphEval) return state;
+    return {
+        ...state,
+        found: true,
         activeNode: {
             name: ctl.node.name,
             uuid: ctl.node.uuid,
@@ -2082,7 +2090,8 @@ function _pTS_captureAnimGraphRuntimeState(uuid) {
 }
 
 function _pTS_publishAnimGraphObserver(subscription) {
-    const state = _pTS_captureAnimGraphRuntimeState(subscription.uuid);
+    const state = _pTS_captureAnimGraphRuntimeState(subscription.uuid, subscription.instanceId);
+    subscription.instanceId = state.instanceId;
     const signature = JSON.stringify(state);
     if (signature === subscription.signature) return state;
     if (_previewControlIpc) {
@@ -2105,66 +2114,97 @@ function _pTS_announceAnimGraphPreviewSession() {
 }
 
 function _pTS_receiveAnimGraphObservation(_event, info) {
-    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning() || !info.observerId) return;
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()
+        || typeof info.observerId !== 'string' || !Number.isSafeInteger(info.subscriptionId)) return;
+    const epoch = _pTS_animgraphObserverEpochs.get(info.observerId);
+    if (epoch !== undefined && info.subscriptionId < epoch) return;
     if (!info.uuid) {
+        const current = _pTS_animgraphObservers.get(info.observerId);
+        if (current && current.subscriptionId !== info.subscriptionId) return;
+        _pTS_animgraphObserverEpochs.set(info.observerId, info.subscriptionId);
         _pTS_animgraphObservers.delete(info.observerId);
     } else {
+        if (typeof info.uuid !== 'string' || (info.instanceId != null && typeof info.instanceId !== 'string')) return;
+        const current = _pTS_animgraphObservers.get(info.observerId);
+        if (epoch === info.subscriptionId) {
+            // Re-announcing a session must not reset an already resolved selection.
+            if (!current || current.uuid !== info.uuid) return;
+            current.signature = '';
+            _pTS_publishAnimGraphObserver(current);
+            return;
+        }
         const sub = {
             observerId: info.observerId,
             uuid: info.uuid,
             subscriptionId: info.subscriptionId,
+            instanceId: info.instanceId || null,
             signature: ''
         };
+        _pTS_animgraphObserverEpochs.set(info.observerId, info.subscriptionId);
         _pTS_animgraphObservers.set(info.observerId, sub);
         _pTS_publishAnimGraphObserver(sub);
     }
     _updatePreviewTimer();
 }
 
+function _pTS_resolveAnimGraphCommand(info) {
+    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()
+        || typeof info.instanceId !== 'string' || !info.instanceId) return null;
+    const sub = _pTS_animgraphObservers.get(info.observerId);
+    if (!sub || sub.uuid !== info.uuid || sub.subscriptionId !== info.subscriptionId
+        || sub.instanceId !== info.instanceId) return null;
+    const ctl = _pTS_findAnimControllers(sub.uuid).find(candidate => candidate.uuid === sub.instanceId);
+    return ctl ? { sub, ctl } : null;
+}
+
+function _pTS_publishAnimGraphInstance(uuid, instanceId) {
+    for (const sub of _pTS_animgraphObservers.values()) {
+        if (sub.uuid === uuid && sub.instanceId === instanceId) _pTS_publishAnimGraphObserver(sub);
+    }
+}
+
 function _pTS_receiveAnimGraphSetVariable(_event, info) {
-    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()) return;
-    const ctl = _pTS_findActiveAnimController(info.uuid);
-    if (!ctl) return;
+    const target = _pTS_resolveAnimGraphCommand(info);
+    if (!target || typeof info.name !== 'string') return { success: false };
+    const { ctl } = target;
     try {
-        if (typeof ctl.setValue === 'function') {
-            ctl.setValue(info.name, info.value);
-        } else if (ctl._graphEval && typeof ctl._graphEval.setValue === 'function') {
-            ctl._graphEval.setValue(info.name, info.value);
-        }
+        const variable = _pTS_extractLiveVariables(ctl).find(candidate => candidate.name === info.name);
+        if (!variable) return { success: false };
+        const value = info.value;
+        if ((variable.type === 0 && (typeof value !== 'number' || !Number.isFinite(value)))
+            || (variable.type === 3 && (typeof value !== 'number' || !Number.isInteger(value)))
+            || ((variable.type === 1 || variable.type === 2) && typeof value !== 'boolean')
+            || ![0, 1, 2, 3].includes(variable.type)) return { success: false };
+        ctl.setValue(info.name, value);
+        _pTS_publishAnimGraphInstance(info.uuid, info.instanceId);
+        return { success: true };
     } catch (e) {
         console.warn(`[pTS-Core] Failed to set animgraph variable ${info.name}:`, e);
-    }
-    for (const sub of _pTS_animgraphObservers.values()) {
-        if (sub.uuid === info.uuid) _pTS_publishAnimGraphObserver(sub);
+        return { success: false };
     }
 }
 
 function _pTS_receiveAnimGraphSetLayerWeight(_event, info) {
-    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()) return;
-    const ctl = _pTS_findActiveAnimController(info.uuid);
-    if (!ctl) return;
+    const target = _pTS_resolveAnimGraphCommand(info);
+    if (!target || !Number.isInteger(info.layerIndex) || info.layerIndex < 0
+        || info.layerIndex >= target.ctl.layerCount || typeof info.weight !== 'number'
+        || !Number.isFinite(info.weight) || info.weight < 0 || info.weight > 1) return { success: false };
     try {
-        if (typeof ctl.setLayerWeight === 'function') {
-            ctl.setLayerWeight(info.layerIndex, info.weight);
-        } else if (ctl._graphEval && typeof ctl._graphEval.setLayerWeight === 'function') {
-            ctl._graphEval.setLayerWeight(info.layerIndex, info.weight);
-        }
+        target.ctl.setLayerWeight(info.layerIndex, info.weight);
+        _pTS_publishAnimGraphInstance(info.uuid, info.instanceId);
+        return { success: true };
     } catch (e) {
-        console.warn(`[pTS-Core] Failed to set animgraph layer weight:`, e);
-    }
-    for (const sub of _pTS_animgraphObservers.values()) {
-        if (sub.uuid === info.uuid) _pTS_publishAnimGraphObserver(sub);
+        console.warn('[pTS-Core] Failed to set animgraph layer weight:', e);
+        return { success: false };
     }
 }
 
 function _pTS_receiveAnimGraphLogRuntime(_event, info) {
-    if (!info || info.sessionId !== _previewSessionId || !isPreviewModeRunning()) return;
-    const ctl = _pTS_findActiveAnimController(info.uuid);
-    if (!ctl) {
-        console.warn(`[pTS-AnimGraph Logger] No active AnimationController playing graph ${info.uuid}`);
-        return;
-    }
-    console.log(`[pTS-AnimGraph Logger] Active AnimationController on "${_pTS_getNodeHierarchyPath(ctl.node)}":`, ctl, 'GraphEval:', ctl._graphEval);
+    const target = _pTS_resolveAnimGraphCommand(info);
+    if (!target) return { success: false };
+    const { ctl } = target;
+    console.log(`[pTS-AnimGraph Logger] AnimationController ${ctl.uuid} on "${_pTS_getNodeHierarchyPath(ctl.node)}":`, ctl, 'GraphEval:', ctl._graphEval);
+    return { success: true };
 }
 
 function _stopPreviewSession() {
@@ -2173,6 +2213,7 @@ function _stopPreviewSession() {
     _previewObservers.clear();
     _previewObserverEpochs.clear();
     _pTS_animgraphObservers.clear();
+    _pTS_animgraphObserverEpochs.clear();
     clearInterval(_previewSyncInterval);
     _previewSyncInterval = null;
     if (sessionId) {
@@ -2845,18 +2886,145 @@ exports.methods = {
         }
         if (!graphAsset) return null;
 
+        const referenceIds = new Map();
+        const getId = (kind, object) => {
+            if (!referenceIds.has(object)) referenceIds.set(object, referenceIds.size);
+            return `${kind}:${referenceIds.get(object)}`;
+        };
+        const getStateType = (st, sm) => {
+            if (st === sm.entryState) return 'Entry';
+            if (st === sm.exitState) return 'Exit';
+            if (st === sm.anyState) return 'Any';
+            const kinds = {
+                'cc.animation.SubStateMachine': 'SubStateMachine',
+                'cc.animation.Motion': 'Motion',
+                'cc.animation.EmptyState': 'Empty',
+                'cc.animation.ProceduralPoseState': 'ProceduralPose',
+            };
+            for (let ctor = st.constructor; ctor && ctor !== Object; ctor = cc.js.getSuper(ctor)) {
+                const type = kinds[cc.js.getClassName(ctor)];
+                if (type) return type;
+            }
+            const className = cc.js.getClassName(st);
+            return className.slice(className.lastIndexOf('.') + 1);
+        };
+        // Authored metadata only: never bind, evaluate, or edit a condition to inspect it.
+        // Enum values match Creator 3.8.8's binary-condition.ts and unary-condition.ts.
+        const pTS_conditionOperators = {
+            'cc.animation.BinaryCondition': [
+                'EQUAL_TO', 'NOT_EQUAL_TO', 'LESS_THAN', 'LESS_THAN_OR_EQUAL_TO',
+                'GREATER_THAN', 'GREATER_THAN_OR_EQUAL_TO',
+            ],
+            'cc.animation.UnaryCondition': ['TRUTHY', 'FALSY'],
+        };
+        const pTS_transitionFields = { from: true, to: true, conditions: true };
+        const pTS_authoredEntries = (object) => {
+            const keys = Array.isArray(object.constructor && object.constructor.__values__)
+                ? object.constructor.__values__ : Object.keys(object);
+            const entries = [];
+            for (const key of keys) {
+                if (key.startsWith('__')) continue;
+                let owner = object;
+                let descriptor;
+                while (owner && !(descriptor = Object.getOwnPropertyDescriptor(owner, key))) {
+                    owner = Object.getPrototypeOf(owner);
+                }
+                // Accessors and methods are not authored values; inspecting them may run code.
+                if (descriptor && 'value' in descriptor && typeof descriptor.value !== 'function') {
+                    entries.push([key, descriptor.value]);
+                }
+            }
+            return entries;
+        };
+        const pTS_cloneAuthored = (value, ancestors = new Set(), depth = 0) => {
+            if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+            if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
+            if (!value || typeof value !== 'object') return null;
+            if (ancestors.has(value)) return '[Circular]';
+            if (depth >= 16) return '[Max depth]';
+            if (typeof cc.Asset === 'function' && value instanceof cc.Asset) {
+                return { __uuid__: typeof value._uuid === 'string' ? value._uuid : '' };
+            }
+            ancestors.add(value);
+            let clone;
+            if (Array.isArray(value)) {
+                clone = value.map((item) => pTS_cloneAuthored(item, ancestors, depth + 1));
+            } else {
+                clone = {};
+                const type = cc.js.getClassName(value);
+                if (type && type !== 'Object') clone.__type__ = type;
+                for (const [key, item] of pTS_authoredEntries(value)) {
+                    clone[key] = pTS_cloneAuthored(item, ancestors, depth + 1);
+                }
+                // Plain serialized asset references have no class metadata.
+                if (typeof value.__uuid__ === 'string') clone.__uuid__ = value.__uuid__;
+                if (typeof value.__type__ === 'string') clone.__type__ = value.__type__;
+            }
+            ancestors.delete(value);
+            return clone;
+        };
+        const pTS_authoredProperties = (object, excluded = {}) => {
+            const properties = {};
+            const ancestors = new Set([object]);
+            for (const [key, value] of pTS_authoredEntries(object)) {
+                if (Object.prototype.hasOwnProperty.call(excluded, key)) continue;
+                properties[key] = pTS_cloneAuthored(value, ancestors);
+            }
+            return properties;
+        };
+        const pTS_conditionDump = (condition) => {
+            const type = typeof condition.__type__ === 'string' ? condition.__type__ : cc.js.getClassName(condition);
+            const properties = pTS_authoredProperties(condition);
+            const enumLabels = {};
+            const collectLabels = (value, valueType, path) => {
+                if (!value || typeof value !== 'object') return;
+                const labels = pTS_conditionOperators[valueType];
+                const operator = value.operator;
+                if (labels && typeof operator === 'number' && Number.isInteger(operator) && labels[operator]) {
+                    enumLabels[`${path}operator`] = labels[operator];
+                }
+                for (const [key, nested] of Object.entries(value)) {
+                    const nestedType = nested && typeof nested === 'object' && typeof nested.__type__ === 'string'
+                        ? nested.__type__ : '';
+                    collectLabels(nested, nestedType, `${path}${key}.`);
+                }
+            };
+            collectLabels(properties, type, '');
+            return { type, properties, enumLabels };
+        };
+        // Keep transition identities separate so existing machine/state IDs do not shift.
+        const pTS_transitionIds = new Map();
+        const pTS_transitionId = (transition) => {
+            if (!pTS_transitionIds.has(transition)) pTS_transitionIds.set(transition, pTS_transitionIds.size);
+            return `transition:${pTS_transitionIds.get(transition)}`;
+        };
         const layers = [];
         const rawLayers = graphAsset.layers || graphAsset._layers || [];
         for (let lIdx = 0; lIdx < rawLayers.length; lIdx++) {
             const l = rawLayers[lIdx];
-            const states = [];
-            const transitions = [];
-            const walkSM = (sm, path) => {
-                if (!sm || typeof sm.states !== 'function') return;
-                for (const st of sm.states()) {
-                    const statePath = path + '/' + st.name;
+            const rootMachine = l.stateMachine || l._stateMachine;
+            if (!rootMachine) continue;
+            const layerName = typeof l.name === 'string' ? l.name : `Layer ${lIdx}`;
+            const stateMachines = [];
+            const pending = [{ object: rootMachine, name: layerName, path: layerName }];
+            const visited = new Set();
+            for (let index = 0; index < pending.length; index++) {
+                const { object: sm, name, path: machinePath } = pending[index];
+                if (visited.has(sm)) continue;
+                visited.add(sm);
+                const machine = {
+                    id: getId('machine', sm), name, path: machinePath, states: [], transitions: [],
+                };
+                stateMachines.push(machine);
+                const stateIds = new Map();
+                const rawStates = typeof sm.states === 'function' ? sm.states() : sm._states || [];
+                for (const st of rawStates) {
+                    const stateName = typeof st.name === 'string' ? st.name : '';
+                    const statePath = `${machinePath}/${stateName}`;
+                    const type = getStateType(st, sm);
+                    const nested = type === 'SubStateMachine' ? st.stateMachine || st._stateMachine : null;
                     const comps = [];
-                    const rawComps = st._components || st.components || [];
+                    const rawComps = st.components || st._components || [];
                     for (const c of rawComps) {
                         const ctor = c.constructor;
                         const attrs = cc.Class.Attr.getClassAttrs(ctor) || {};
@@ -2872,77 +3040,81 @@ exports.methods = {
                             }
                         }
                         for (const p of Object.keys(propAttrs)) {
-                            props[p] = c[p];
+                            props[p] = _serializeRuntimeValue(c[p], true);
                         }
                         if (ctor.__editor_props__) {
                             for (const [epK, epV] of Object.entries(ctor.__editor_props__)) {
-                                props[epK] = c[epK];
+                                props[epK] = _serializeRuntimeValue(c[epK], true);
                                 propAttrs[epK] = Object.assign({}, propAttrs[epK] || {}, epV);
                             }
                         }
+                        for (const key of Object.keys(propAttrs)) propAttrs[key] = _runtimeMetadata(propAttrs[key]);
                         comps.push({
                             className: cc.js.getClassName(c),
                             props,
                             attrs: propAttrs
                         });
                     }
-                    let clipName = null;
-                    let clipUuid = null;
-                    if (st.motion && st.motion.clip) {
-                        clipName = st.motion.clip.name || null;
-                        clipUuid = st.motion.clip._uuid || null;
-                    }
-                    states.push({
-                        name: st.name,
-                        id: (st.__editorExtras__ && st.__editorExtras__.id) || st.name,
+                    const extras = st[cc.editorExtrasTag || '__editorExtras__'] || {};
+                    const clip = st.motion && st.motion.clip;
+                    const id = getId('state', st);
+                    stateIds.set(st, id);
+                    machine.states.push({
+                        name: stateName,
+                        id,
                         path: statePath,
-                        type: st.name === 'Entry' ? 'Entry' : st.name === 'Exit' ? 'Exit' : st.name === 'Any' ? 'Any' : (st.stateMachine || st._stateMachine) ? 'SubStateMachine' : 'Motion',
-                        centerX: (st.__editorExtras__ && st.__editorExtras__.centerX) !== undefined ? st.__editorExtras__.centerX : 0,
-                        centerY: (st.__editorExtras__ && st.__editorExtras__.centerY) !== undefined ? st.__editorExtras__.centerY : 0,
-                        speed: st.speed !== undefined ? st.speed : 1,
-                        speedMultiplier: st.speedMultiplier || '',
+                        stateMachineId: nested ? getId('machine', nested) : null,
+                        type,
+                        centerX: typeof extras.centerX === 'number' ? extras.centerX : 0,
+                        centerY: typeof extras.centerY === 'number' ? extras.centerY : 0,
+                        speed: typeof st.speed === 'number' ? st.speed : 1,
+                        speedMultiplier: typeof st.speedMultiplier === 'string' ? st.speedMultiplier : '',
                         speedMultiplierEnabled: !!st.speedMultiplierEnabled,
-                        clipName,
-                        clipUuid,
+                        clipName: clip && typeof clip.name === 'string' ? clip.name : null,
+                        clipUuid: clip && typeof clip._uuid === 'string' ? clip._uuid : null,
                         components: comps
                     });
-                    const nested = st.stateMachine || st._stateMachine;
-                    if (nested) walkSM(nested, statePath);
+                    if (nested) pending.push({ object: nested, name: stateName, path: statePath });
                 }
-                if (typeof sm.transitions === 'function') {
-                    for (const tr of sm.transitions()) {
-                        transitions.push({
-                            from: tr.from ? tr.from.name : '',
-                            to: tr.to ? tr.to.name : '',
-                            duration: tr.duration !== undefined ? tr.duration : 0,
-                            hasExitCondition: !!tr.exitConditionEnabled
-                        });
-                    }
+                const rawTransitions = typeof sm.transitions === 'function' ? sm.transitions() : sm._transitions || [];
+                for (const tr of rawTransitions) {
+                    const from = stateIds.get(tr.from);
+                    const to = stateIds.get(tr.to);
+                    if (from === undefined || to === undefined) continue;
+                    machine.transitions.push({
+                        id: pTS_transitionId(tr),
+                        type: typeof tr.__type__ === 'string' ? tr.__type__ : cc.js.getClassName(tr),
+                        properties: pTS_authoredProperties(tr, pTS_transitionFields),
+                        conditions: (Array.isArray(tr.conditions) ? tr.conditions : [])
+                            .filter((condition) => condition && typeof condition === 'object')
+                            .map(pTS_conditionDump),
+                        from, to,
+                        duration: typeof tr.duration === 'number' ? tr.duration : 0,
+                        hasExitCondition: !!tr.exitConditionEnabled
+                    });
                 }
-            };
-            walkSM(l.stateMachine, l.name);
+            }
             layers.push({
                 index: lIdx,
-                name: l.name,
+                name: layerName,
                 weight: l.weight !== undefined ? l.weight : 1.0,
                 additive: !!l.additive,
                 mask: !!l.mask,
-                states,
-                transitions
+                stateMachineId: getId('machine', rootMachine),
+                stateMachines
             });
         }
 
         const variables = [];
         if (graphAsset.variables) {
             for (const [vName, vObj] of graphAsset.variables) {
-                const typeNum = vObj._type !== undefined ? vObj._type : (cc.js.getClassName(vObj) === 'cc.animation.TriggerVariable' ? 3 : 0);
-                const typeNames = ['Float', 'Integer', 'Boolean', 'Trigger'];
+                const typeNum = vObj.type;
                 variables.push({
                     name: vName,
                     type: typeNum,
-                    typeName: typeNames[typeNum] || 'Unknown',
-                    value: vObj._value !== undefined ? vObj._value : false,
-                    isTrigger: typeNum === 3
+                    typeName: _pTS_animgraphVariableTypeNames[typeNum] || 'Unknown',
+                    value: _serializeRuntimeValue(vObj.value, false, new Set(), 0),
+                    isTrigger: typeNum === 2
                 });
             }
         }
@@ -2956,23 +3128,23 @@ exports.methods = {
         };
     },
 
-    pTS_get_animgraph_runtime_state(uuid) {
-        return _pTS_captureAnimGraphRuntimeState(uuid);
+    pTS_get_animgraph_runtime_state(info) {
+        const target = _pTS_resolveAnimGraphCommand({ ...info, sessionId: _previewSessionId });
+        return target
+            ? { ..._pTS_captureAnimGraphRuntimeState(info.uuid, info.instanceId), subscriptionId: info.subscriptionId }
+            : { isPreview: isPreviewModeRunning(), found: false, uuid: info && info.uuid || '', instances: [], instanceId: info && info.instanceId || null, subscriptionId: info && info.subscriptionId };
     },
 
-    pTS_set_animgraph_variable(uuid, name, value) {
-        _pTS_receiveAnimGraphSetVariable(null, { sessionId: _previewSessionId, uuid, name, value });
-        return { success: true };
+    pTS_set_animgraph_variable(info) {
+        return _pTS_receiveAnimGraphSetVariable(null, { ...info, sessionId: _previewSessionId });
     },
 
-    pTS_set_animgraph_layer_weight(uuid, layerIndex, weight) {
-        _pTS_receiveAnimGraphSetLayerWeight(null, { sessionId: _previewSessionId, uuid, layerIndex, weight });
-        return { success: true };
+    pTS_set_animgraph_layer_weight(info) {
+        return _pTS_receiveAnimGraphSetLayerWeight(null, { ...info, sessionId: _previewSessionId });
     },
 
-    pTS_log_animgraph_runtime(uuid) {
-        _pTS_receiveAnimGraphLogRuntime(null, { sessionId: _previewSessionId, uuid });
-        return { success: true };
+    pTS_log_animgraph_runtime(info) {
+        return _pTS_receiveAnimGraphLogRuntime(null, { ...info, sessionId: _previewSessionId });
     },
 
     props(what) {
