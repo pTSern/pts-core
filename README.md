@@ -142,6 +142,12 @@ Ready-to-use behaviors that eliminate repetitive boilerplate:
 | **`pObject`** | Deep cloning (`clone`), property copying (`assign`, `copy`), chain binding (`actChainBinder`), method introspection (`getAllMethodNames`), method interception (`hook`). |
 | **`pString`** | String interpolation, UUID generator (`uuid`), number abbreviations (`formatKMB`, 1.2M / 4.5K), comma/dot formatters, regex extraction. |
 
+#### Contract resolution and regression checks
+
+`pClass.isImplementedFrom()` supports native inheritance and registered `@implement` contracts without re-entering the custom `Symbol.hasInstance` hook. Each lookup shares its visited constructors across contract branches, so cyclic or diamond-shaped metadata terminates without repeated traversal. Component queries retain support for constructor and registered-name contracts.
+
+From this extension directory, install development dependencies with `npm install`, then run `npm run test:contract-resolution`. The regression suite transpiles the runtime module and checks negative lookups, positive and inherited implementations, custom `instanceof` behavior, and cyclic contract graphs. The local TypeScript development dependency also supplies the compiler for `npm run build`.
+
 ---
 
 ## 4. Scene Process Bridge (`src/_cc.js`)

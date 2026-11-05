@@ -132,7 +132,7 @@ export class Pooler_Node_Asset extends pTSAsset implements NodePool {
 
     put(node: Node): void {
         if(node && this._pool.indexOf(node) === -1) {
-            node.removeFromParent()
+            node.removeFromParent();
             const _handler = this.poolHandlerComp ? node.getComponent(this.poolHandlerComp) : null
             if(_handler && _handler[this._unuseHandler]) {
                 _handler[this._unuseHandler]();

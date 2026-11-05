@@ -9,6 +9,7 @@
     "main": "./bootstrap.js",
     "scripts": {
         "build": "tsc",
+        "test:contract-resolution": "node scripts/test-contract-resolution.js",
         "watch": "tsc -w"
     },
     "panels": {
@@ -98,5 +99,8 @@
                 ]
             }
         }
+    },
+    "devDependencies": {
+        "typescript": "^6.0.3"
     }
 }
