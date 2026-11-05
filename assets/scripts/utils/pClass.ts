@@ -400,29 +400,35 @@ export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Functi
         superName = js.getClassName(superClass as any) || (superClass as any).name;
     }
 
+    return _isImplementedFrom(actualSuper, superName, targetClass);
+}
+
+function _isImplementedFrom(actualSuper: Function | undefined, superName: string, targetClass: Function, visited?: Set<Function>): boolean {
+
     if (actualSuper && targetClass === actualSuper) return true;
     try {
-        if (actualSuper && targetClass.prototype instanceof actualSuper) return true;
+        // Bypass our Symbol.hasInstance hook: it calls isImplementedFrom again.
+        if (actualSuper && Function.prototype[Symbol.hasInstance].call(actualSuper, targetClass.prototype)) return true;
     } catch {}
 
     let cur: any = targetClass;
-    const visited = new Set<any>();
+    const seen = visited || new Set<Function>();
 
-    while (cur && cur !== Object && cur !== Function && !visited.has(cur)) {
-        visited.add(cur);
+    while (cur && cur !== Object && cur !== Function && !seen.has(cur)) {
+        seen.add(cur);
         const impls: any = cur[_$Keys.IMPL] || cur['__pTS_implements__'];
         if (impls) {
             if (impls instanceof Set) {
                 if ((actualSuper && impls.has(actualSuper)) || (superName && impls.has(superName))) return true;
                 for (const contract of impls) {
-                    if (typeof contract === 'function' && isImplementedFrom(superClass, contract)) {
+                    if (typeof contract === 'function' && _isImplementedFrom(actualSuper, superName, contract, seen)) {
                         return true;
                     }
                 }
             } else if (Array.isArray(impls)) {
                 if ((actualSuper && impls.includes(actualSuper)) || (superName && impls.includes(superName))) return true;
                 for (const contract of impls) {
-                    if (typeof contract === 'function' && isImplementedFrom(superClass, contract)) {
+                    if (typeof contract === 'function' && _isImplementedFrom(actualSuper, superName, contract, seen)) {
                         return true;
                     }
                 }
@@ -431,7 +437,7 @@ export function isImplementedFrom(superClass: pFlex.TCtorFlex<any, any> | Functi
                 if ((superName && impls[superName]) || (actualSuper && actualSuper in impls)) return true;
                 for (const key of Object.keys(impls)) {
                     const c = js.getClassByName(key);
-                    if (c && isImplementedFrom(superClass, c)) return true;
+                    if (c && _isImplementedFrom(actualSuper, superName, c, seen)) return true;
                 }
             }
         }
