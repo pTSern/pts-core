@@ -2039,19 +2039,56 @@ function _pTS_extractLiveComponents(ctl) {
                 if (!path) continue;
                 const rawComps = ms.components && ms.components._components ? ms.components._components : [];
                 for (const comp of rawComps) {
-                    const compCls = cc.js.getClassName(comp);
+                    if (!comp) continue;
+                    const ctor = comp.constructor;
+                    const compCls = cc.js.getClassName(comp) || (ctor && ctor.name) || 'StateMachineComponent';
+                    const ccProps = _getCCProps(comp);
+                    const editorProps = _getEditorPropsOfClass(ctor, comp);
+                    const instanceKeys = Object.keys(comp).filter(k =>
+                        !k.startsWith('__') && (!k.startsWith('_') || ccProps.includes(k) || Object.prototype.hasOwnProperty.call(editorProps, k)));
+                    const allKeys = [...new Set([...ccProps, ...Object.keys(editorProps), ...instanceKeys])].filter(k =>
+                        !k.startsWith('__') && k !== 'constructor' && typeof comp[k] !== 'function'
+                    );
                     const values = {};
-                    for (const k of Object.keys(comp)) {
-                        if (!k.startsWith('_') && typeof comp[k] !== 'function') {
-                            values[k] = _serializeRuntimeValue(comp[k], false, new Set(), 0);
+                    for (const k of allKeys) {
+                        try {
+                            const val = comp[k];
+                            if (val !== undefined && typeof val !== 'function') {
+                                values[k] = _serializeRuntimeValue(val, true, new Set(), 0);
+                            }
+                        } catch {}
+                    }
+                    const Attr = (cc.CCClass && cc.CCClass.Attr) || (cc.Class && cc.Class.Attr);
+                    const declaredAttrs = (ctor && Attr && Attr.getClassAttrs(ctor)) || {};
+                    const delim = (Attr && Attr.DELIMETER) || '$_$';
+                    const propAttrs = {};
+                    for (const [attrKey, val] of Object.entries(declaredAttrs)) {
+                        const parts = attrKey.split(delim);
+                        if (parts.length === 2) {
+                            const p = parts[0], a = parts[1];
+                            propAttrs[p] = propAttrs[p] || {};
+                            propAttrs[p][a] = val;
                         }
                     }
+                    if (ctor && ctor.__editor_props__) {
+                        for (const [epK, epV] of Object.entries(ctor.__editor_props__)) {
+                            propAttrs[epK] = Object.assign({}, propAttrs[epK] || {}, epV);
+                        }
+                    }
+                    for (const key of Object.keys(propAttrs)) {
+                        propAttrs[key] = _runtimeMetadata(propAttrs[key]);
+                    }
                     components[path] = components[path] || {};
-                    components[path][compCls] = values;
+                    components[path][compCls] = {
+                        values,
+                        attrs: propAttrs
+                    };
                 }
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        console.warn('[pTS-Core] Error extracting live animgraph components:', e);
+    }
     return components;
 }
 

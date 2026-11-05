@@ -19,6 +19,7 @@ export class Pooler_Node_Asset extends pTSAsset implements NodePool {
     @property({ min: 0, tooltip: "In mms" })
     timeBudgetMs: number = 16
 
+    @editor_property([Node])
     protected _pool: Node[] = []
     @editor_property()
     protected get _size() { return this._pool.length }
