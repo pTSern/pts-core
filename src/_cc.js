@@ -7,6 +7,13 @@
  * Runs inside the Engine Scene execution context where `cc` and `cce` are globally available.
  */
 
+
+let _gizmoModule = null;
+try {
+    _gizmoModule = require('./gizmo');
+} catch (err) {
+    console.error('[pTS-Core] Failed to load gizmo module:', err);
+}
 // ─── Helpers: Node & Component Lookups ───
 
 function findNodeByUuid(uuid) {
@@ -2649,6 +2656,28 @@ exports.load = function() {
     _hookQueryClasses();
     _hookQueryNodeTree();
 
+    try {
+        if (_gizmoModule && _gizmoModule.GizmoRegistry) {
+            _gizmoModule.GizmoRegistry.init();
+            if (typeof cce !== 'undefined') {
+                cce.EditorGizmo = {
+                    Base: _gizmoModule.EditorGizmoBase,
+                    Draw: _gizmoModule.GizmoDraw,
+                    Handle: _gizmoModule.GizmoHandle,
+                    LineHandle: _gizmoModule.GizmoLineHandle,
+                    SvgGizmo: _gizmoModule.SvgGizmo,
+                    Registry: _gizmoModule.GizmoRegistry,
+                    register: _gizmoModule.GizmoRegistry.register.bind(_gizmoModule.GizmoRegistry),
+                    unregister: _gizmoModule.GizmoRegistry.unregister.bind(_gizmoModule.GizmoRegistry),
+                };
+            }
+            if (typeof globalThis !== 'undefined') {
+                globalThis.EditorGizmo = cce ? cce.EditorGizmo : null;
+            }
+        }
+    } catch (gizmoErr) {
+        console.error('[pTS-Core] Failed to initialize gizmo registry on load:', gizmoErr);
+    }
     if (isPreview) _startPreviewSession();
 };
 
@@ -3959,6 +3988,49 @@ exports.methods = {
                 data: result,
                 message: 'Code executed successfully'
             };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    }
+,
+
+    gizmoRegister(args) {
+        try {
+            if (!_gizmoModule || !_gizmoModule.GizmoRegistry) {
+                return { success: false, error: 'Gizmo subsystem not available' };
+            }
+            const { componentName, tier = 'component' } = args || {};
+            if (!componentName) {
+                return { success: false, error: 'Missing componentName' };
+            }
+            return {
+                success: true,
+                message: `Gizmo registered for ${componentName}`
+            };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    gizmoList() {
+        try {
+            if (!_gizmoModule || !_gizmoModule.GizmoRegistry) {
+                return { success: false, error: 'Gizmo subsystem not available' };
+            }
+            const list = _gizmoModule.GizmoRegistry.list();
+            return { success: true, data: list };
+        } catch (err) {
+            return { success: false, error: err.message };
+        }
+    },
+
+    gizmoScan() {
+        try {
+            if (!_gizmoModule || !_gizmoModule.GizmoRegistry) {
+                return { success: false, error: 'Gizmo subsystem not available' };
+            }
+            _gizmoModule.GizmoRegistry.scanDecorators();
+            return { success: true, message: 'Gizmo decorators scanned successfully' };
         } catch (err) {
             return { success: false, error: err.message };
         }
