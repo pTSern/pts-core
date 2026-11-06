@@ -55,7 +55,11 @@
                 "pTS_get_animgraph_runtime_state",
                 "pTS_set_animgraph_variable",
                 "pTS_set_animgraph_layer_weight",
-                "pTS_log_animgraph_runtime"
+                "pTS_log_animgraph_runtime",
+                "gizmoRegister",
+                "gizmoUnregister",
+                "gizmoList",
+                "gizmoScan"
             ]
         },
         "menu": [

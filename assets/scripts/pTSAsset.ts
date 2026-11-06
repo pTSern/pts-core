@@ -4,6 +4,9 @@ import { pArray, pString } from "./utils";
 import { editor_property, implement, imps, getComponent } from "./utils/pClass";
 import { CC_IEnumList } from "./interfaces/cc/CC.IEnumable";
 
+export { EditorGizmo, gizmo, pGizmo } from "./utils/pGizmo";
+export { MaskPolygon, MaskPolygonGizmo } from "./Components/Renderer/MaskPolygon";
+export { MeshPolygonSprite, MeshPolygonSpriteGizmo } from "./Components/Renderer/MeshPolygonSprite";
 export type pTS_TMenuOption = string | { path: string; priority?: number; hide?: boolean } | boolean;
 
 /**
