@@ -1,4 +1,6 @@
-import { _decorator, Component, Camera, Vec3, UITransform, Color, director, sys, game } from 'cc';
+import { _decorator, Component, Camera, Vec3, UITransform, Color, director, sys, game, JsonAsset } from 'cc';
+import { pConst, pEngine } from '../../utils';
+import { editor_property } from '../../utils/pClass';
 const { ccclass, property, requireComponent } = _decorator;
 
 const _worldPos = new Vec3();
@@ -19,49 +21,53 @@ export class Dom_SyncNode extends Component {
 
     // ── Editor Properties ──────────────────────────────────────────────
 
-    @property(Camera)
+    @property({ type: Camera, group: pConst.GROUPS.CORE })
     public camera: Camera = null;
 
     /** HTML `id` attribute of the created DOM element. */
-    @property({})
+    @property({ group: pConst.GROUPS.CORE })
     did: string = 'pts__gd_banner__style';
 
     /** `id` of the parent container element. Falls back to `document.body`. */
-    @property({})
+    @property({ group: pConst.GROUPS.CORE })
     container: string = 'GameDiv';
 
     /**
      * Optional CSS class(es) applied to the element.
      * Allows external stylesheets to control appearance.
      */
-    @property({})
+    @property({ group: pConst.GROUPS.CORE })
     cssClass: string = '';
 
     /**
      * When `true`, pointer / touch events pass through to the canvas below.
      * Set to `false` if the DOM element itself should be interactive.
      */
-    @property({})
+    @property({ group: pConst.GROUPS.CORE })
     pointerPassThrough: boolean = true;
 
     /**
      * Base z-index for the DOM element.
      * Increase if the element appears behind other overlays.
      */
-    @property({})
+    @property({ group: pConst.GROUPS.CORE })
     zIndex: number = 100;
 
+    @property({ type: JsonAsset, group: pConst.GROUPS.EVENT })
+    onDomElementCreated: JsonAsset[] = []
+
     /** When `true`, fills the DOM element with `debugColor` so you can visually verify the sync. */
-    @property({})
+    @property({ group: pConst.GROUPS.OPTION })
     debug: boolean = false;
 
     /** Fill color used when `debug` is enabled. */
-    @property({ type: Color, visible() { return this.debug } })
+    @property({ type: Color, visible() { return this.debug }, group: pConst.GROUPS.OPTION })
     protected _dcolor: Color = new Color(255, 0, 0, 128);
 
     // ── Runtime State ──────────────────────────────────────────────────
 
     private _domElement: HTMLDivElement | null = null;
+    @editor_property(UITransform)
     private _uiTransform: UITransform | null = null;
 
     // ── Lifecycle ──────────────────────────────────────────────────────
@@ -134,6 +140,7 @@ export class Dom_SyncNode extends Component {
         this._domElement = el;
 
         this._applyDebugStyle();
+        pEngine.Json.event.invoke(this.onDomElementCreated, el);
     }
 
     /**
