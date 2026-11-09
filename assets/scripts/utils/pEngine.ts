@@ -308,11 +308,15 @@ Json.param.lock = function(target: JsonAsset, status: boolean = true) {
 
 Json.event.add = function(asset, ...ls: pFlex.THandler[]) {
     const _assets = pArray.flatter(asset);
-    const mappedLs = pClass.mapper(ls);
+    if(_assets.length <= 0) return;
+    const _mappedLs = pClass.mapper(ls);
+
     for(const _ret of _assets) {
         const d = _get(_ret);
-        if (d) d.listeners.push(...mappedLs);
+        if (d) d.listeners.push(..._mappedLs);
     }
+
+    pGlobal.log('DEV', '[Json.event.add]', "\nList: ", _assets, "\nHandlers: ", _mappedLs);
 }
 
 Json.event.remove = function(asset, ...ls: pFlex.THandler[]) {
@@ -338,11 +342,18 @@ Json.event.clean = function(asset) {
 
 Json.event.invoke = function(asset, ...args: any[]) {
     const _assets = pArray.flatter(asset);
+    if(_assets.length <= 0) return [];
+
+    const _out = []
     for(const _ret of _assets) {
         const d = _get(_ret);
-        pGlobal.log('DEV', '[Json.event.invoke] >>', _ret.name, ' with args ', ...args, "\nList: ", _assets, "\nData: ", d);
-        if (d) return pClass.emit(d.listeners, ...args);
+        if(d) {
+            const _return = pClass.emit(d.listeners, ...args);
+            _out.push(_return);
+        }
     }
+    pGlobal.log('DEV', '[Json.event.invoke]',  "\nList: ", _assets, '\nArgs ', ...args, "\nOut: ", _out);
+    return _out;
 }
 
 Json.event.seal = function(asset: pFlex.TArray<JsonAsset>, status: boolean) {
