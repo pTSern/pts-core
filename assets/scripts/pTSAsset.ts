@@ -262,7 +262,16 @@ export abstract class pTSAsset<_TInterfaces extends Record<string, any> = { any:
 
         // Fresh event driver and runtime load state
         cloned._driver = pDriver.Handler.create();
-        (cloned as any)._isLoaded = true;
+        const clonedTarget = cloned as unknown as Record<string | symbol, unknown>;
+        if (this[_hydratePromise_]) {
+            clonedTarget._isLoaded = false;
+            clonedTarget[_hydratePromise_] = this.ready.then(() => {
+                _$deepCloneProperties(this, cloned);
+                clonedTarget._isLoaded = true;
+            });
+        } else {
+            clonedTarget._isLoaded = true;
+        }
 
         try {
             (cloned as any)._onLoad?.();
