@@ -352,16 +352,41 @@ function _ensureAllRealCurvesValid(obj, ctor = null, visited = new Set()) {
     }
 }
 
-function _toDumperData(target) {
-    const _prop = _getCCPropsInfo(target);
+function _toDumperData(target, visited = new Set()) {
+    const _ctor = (typeof target === 'function' ? target : target?.constructor);
+    if (!_ctor || visited.has(_ctor)) return;
+    visited.add(_ctor);
+
+    const _attrs = cc.Class.Attr.getClassAttrs(_ctor);
+    const _del = cc.Class.Attr.DELIMETER || '$_$';
+    const _prop = _getCCPropsInfo(_ctor);
+
     for (const _p in _prop) {
-        const _val = target[_p];
+        const _val = _prop[_p];
         for (const _k in _val) {
             if (_k === 'default') {
                 const _def = _val[_k];
                 try {
                     const _test = typeof _def === 'function' ? _def() : _def;
                 } catch {}
+            }
+        }
+        const _type = _val.type || _val.ctor;
+        if (_type) {
+            const _innerType = Array.isArray(_type) ? _type[0] : _type;
+            if (_innerType && typeof _innerType === 'object' && !Array.isArray(_innerType)) {
+                try {
+                    if (!cc.Enum.isEnum(_innerType)) {
+                        cc.Enum(_innerType);
+                    }
+                    const _list = cc.Enum.getList(_innerType);
+                    if (Array.isArray(_list)) {
+                        _attrs[`${_p}${_del}type`] = 'Enum';
+                        _attrs[`${_p}${_del}enumList`] = _list;
+                    }
+                } catch {}
+            } else if (typeof _innerType === 'function' && _innerType.__props__) {
+                _toDumperData(_innerType, visited);
             }
         }
     }
@@ -520,7 +545,7 @@ function _applyInstanceAttrsToDump(instance, dump, className = null) {
         if (valInst && !Array.isArray(valInst)) {
             const u = valInst._uuid || valInst.uuid || (valInst.__value__ && (valInst.__value__.uuid || valInst.__value__._uuid));
             if (u) {
-                const isAsset = itemDump.type === 'cc.Asset' || (Array.isArray(itemDump.extends) && itemDump.extends.includes('cc.Asset')) || (itemDump.type && (itemDump.type.startsWith('pTSAsset') || itemDump.type.includes('Asset')));
+                const isAsset = (typeof cc !== 'undefined' && cc.Asset && valInst instanceof cc.Asset) || itemDump.type === 'cc.Asset' || (Array.isArray(itemDump.extends) && itemDump.extends.includes('cc.Asset')) || (itemDump.type && !itemDump.type.includes('.') && (itemDump.type.startsWith('pTSAsset') || itemDump.type.includes('Asset')));
                 if (isAsset) {
                     itemDump.value = { uuid: u };
                 }
@@ -530,6 +555,74 @@ function _applyInstanceAttrsToDump(instance, dump, className = null) {
 
     if (className) {
         _cachedInstanceAttrs[className] = _extractInstanceAttrs(instance);
+    }
+}
+
+function _normalizeEnumDumpNode(node, instanceVal) {
+    if (!node || typeof node !== 'object') return;
+    if (node.isArray && Array.isArray(node.value)) {
+        const elemEnumList = node.elementTypeData && Array.isArray(node.elementTypeData.enumList) ? node.elementTypeData.enumList : null;
+        if (elemEnumList) {
+            _normalizeSingleEnumNode(node.elementTypeData, undefined);
+        } else if (node.elementTypeData) {
+            _normalizeEnumDumpNode(node.elementTypeData, undefined);
+        }
+        for (let i = 0; i < node.value.length; i++) {
+            const elemVal = Array.isArray(instanceVal) ? instanceVal[i] : undefined;
+            if (elemEnumList && node.value[i] && !Array.isArray(node.value[i].enumList)) {
+                node.value[i].type = 'Enum';
+                node.value[i].enumList = elemEnumList;
+            }
+            _normalizeEnumDumpNode(node.value[i], elemVal);
+        }
+        return;
+    }
+
+    if (node.type === 'Enum' || Array.isArray(node.enumList)) {
+        _normalizeSingleEnumNode(node, instanceVal);
+        return;
+    }
+
+    if (node.value && typeof node.value === 'object' && !Array.isArray(node.value)) {
+        for (const k of Object.keys(node.value)) {
+            const childVal = (instanceVal && typeof instanceVal === 'object') ? instanceVal[k] : undefined;
+            _normalizeEnumDumpNode(node.value[k], childVal);
+        }
+    }
+}
+
+function _normalizeSingleEnumNode(node, instanceVal) {
+    if (!node || !Array.isArray(node.enumList)) return;
+    node.type = 'Enum';
+    if (node.enumList.length === 0) return;
+
+    const firstVal = node.enumList[0].value;
+    const isStringEnum = typeof firstVal === 'string';
+    const isNumberEnum = typeof firstVal === 'number';
+
+    if (instanceVal !== undefined && instanceVal !== null && typeof instanceVal !== 'object') {
+        node.value = instanceVal;
+    }
+
+    const hasMatch = (val) => node.enumList.some(item => item.value === val || String(item.value) === String(val));
+
+    if (node.value === undefined || node.value === null || !hasMatch(node.value)) {
+        if (node.default !== undefined && node.default !== null && hasMatch(node.default)) {
+            node.value = node.default;
+        } else {
+            node.value = firstVal;
+        }
+    } else {
+        const matched = node.enumList.find(item => item.value === node.value || String(item.value) === String(node.value));
+        if (matched) {
+            node.value = matched.value;
+        }
+    }
+
+    if (isStringEnum && typeof node.default !== 'string') {
+        node.default = typeof node.value === 'string' ? node.value : firstVal;
+    } else if (isNumberEnum && typeof node.default !== 'number') {
+        node.default = typeof node.value === 'number' ? node.value : firstVal;
     }
 }
 
@@ -544,8 +637,29 @@ function _recoverUnknownDumpTypes(instance, dump, className, currentValues) {
         if (!item) continue;
 
         if (item.type === 'Unknown' || !item.type) {
+            // 0. Check if attribute defines an Enum
+            const enumListAttr = attrs[`${p}${del}enumList`] || item.enumList;
+            if (Array.isArray(enumListAttr)) {
+                item.type = 'Enum';
+                item.enumList = enumListAttr;
+                _normalizeSingleEnumNode(item, instance ? instance[p] : undefined);
+                continue;
+            }
+
             // 1. Try CCClass reflection
             let targetCtor = attrs[`${p}${del}ctor`] || attrs[`${p}${del}type`];
+            if (targetCtor && typeof targetCtor === 'object' && !Array.isArray(targetCtor)) {
+                try {
+                    if (!cc.Enum.isEnum(targetCtor)) cc.Enum(targetCtor);
+                    const list = cc.Enum.getList(targetCtor);
+                    if (Array.isArray(list)) {
+                        item.type = 'Enum';
+                        item.enumList = list;
+                        _normalizeSingleEnumNode(item, instance ? instance[p] : undefined);
+                        continue;
+                    }
+                } catch {}
+            }
             let typeName = '';
             if (targetCtor) {
                 typeName = cc.js.getClassName(targetCtor) || targetCtor.name || (typeof targetCtor === 'string' ? targetCtor : '');
@@ -595,6 +709,8 @@ function _recoverUnknownDumpTypes(instance, dump, className, currentValues) {
                 console.log(`[pTS-Core] Recovered Unknown dump type for ${className}.${p} -> ${typeName}`);
             }
         }
+
+        _normalizeEnumDumpNode(item, instance ? instance[p] : undefined);
     }
 }
 
