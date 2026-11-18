@@ -352,7 +352,36 @@ function _ensureAllRealCurvesValid(obj, ctor = null, visited = new Set()) {
     }
 }
 
+function _isCCPrimitiveType(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    if (typeof cc !== 'undefined') {
+        if (obj === cc.CCString || obj === cc.CCFloat || obj === cc.CCInteger || obj === cc.CCBoolean) return true;
+        if (obj === cc.String || obj === cc.Float || obj === cc.Integer || obj === cc.Boolean) return true;
+    }
+    if (obj.constructor && obj.constructor.name === 'PrimitiveType') return true;
+    return false;
+}
+
+function _healCCPrimitiveTypes() {
+    if (typeof cc === 'undefined') return;
+    const prims = [cc.CCString, cc.CCFloat, cc.CCInteger, cc.CCBoolean, cc.String, cc.Float, cc.Integer, cc.Boolean];
+    for (const p of prims) {
+        if (p && typeof p === 'object' && '__enums__' in p) {
+            try { delete p.__enums__; } catch {}
+        }
+    }
+}
+
+function _isCCEnumObject(obj) {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false;
+    if (_isCCPrimitiveType(obj)) return false;
+    if (obj.constructor && obj.constructor !== Object) return false;
+    if (typeof cc !== 'undefined' && cc.BitMask && typeof cc.BitMask.isBitMask === 'function' && cc.BitMask.isBitMask(obj)) return false;
+    return typeof cc !== 'undefined' && cc.Enum && typeof cc.Enum.isEnum === 'function' && cc.Enum.isEnum(obj);
+}
+
 function _toDumperData(target, visited = new Set()) {
+    _healCCPrimitiveTypes();
     const _ctor = (typeof target === 'function' ? target : target?.constructor);
     if (!_ctor || visited.has(_ctor)) return;
     visited.add(_ctor);
@@ -374,11 +403,15 @@ function _toDumperData(target, visited = new Set()) {
         const _type = _val.type || _val.ctor;
         if (_type) {
             const _innerType = Array.isArray(_type) ? _type[0] : _type;
-            if (_innerType && typeof _innerType === 'object' && !Array.isArray(_innerType)) {
+            if (_isCCPrimitiveType(_innerType)) {
+                if (_attrs[`${_p}${_del}type`] === 'Enum') {
+                    _attrs[`${_p}${_del}type`] = _innerType.name || 'Float';
+                }
+                if (`${_p}${_del}enumList` in _attrs) {
+                    delete _attrs[`${_p}${_del}enumList`];
+                }
+            } else if (_isCCEnumObject(_innerType)) {
                 try {
-                    if (!cc.Enum.isEnum(_innerType)) {
-                        cc.Enum(_innerType);
-                    }
                     const _list = cc.Enum.getList(_innerType);
                     if (Array.isArray(_list)) {
                         _attrs[`${_p}${_del}type`] = 'Enum';
@@ -648,9 +681,13 @@ function _recoverUnknownDumpTypes(instance, dump, className, currentValues) {
 
             // 1. Try CCClass reflection
             let targetCtor = attrs[`${p}${del}ctor`] || attrs[`${p}${del}type`];
-            if (targetCtor && typeof targetCtor === 'object' && !Array.isArray(targetCtor)) {
+            if (_isCCPrimitiveType(targetCtor)) {
+                item.type = targetCtor.name || 'Float';
+                delete item.enumList;
+                continue;
+            }
+            if (_isCCEnumObject(targetCtor)) {
                 try {
-                    if (!cc.Enum.isEnum(targetCtor)) cc.Enum(targetCtor);
                     const list = cc.Enum.getList(targetCtor);
                     if (Array.isArray(list)) {
                         item.type = 'Enum';
@@ -1638,10 +1675,10 @@ function _runtimePropertyDump(rawValue, value, meta, owner, key, seen = new Set(
     const metaEnumType = Array.isArray(meta.type) ? meta.type[0] : (meta.ctor || meta.type);
     let isMetaEnum = false;
     let metaEnumList = null;
-    if (metaEnumType && typeof metaEnumType === 'object') {
+    if (_isCCEnumObject(metaEnumType)) {
         try {
-            isMetaEnum = cc.Enum.isEnum(metaEnumType);
-            if (isMetaEnum) metaEnumList = cc.Enum.getList(metaEnumType).map(e => ({ name: e.name, value: e.value }));
+            isMetaEnum = true;
+            metaEnumList = cc.Enum.getList(metaEnumType).map(e => ({ name: e.name, value: e.value }));
         } catch { isMetaEnum = false; metaEnumList = null; }
     }
     dump.type = dump.type || (isMetaEnum ? 'Enum' :
