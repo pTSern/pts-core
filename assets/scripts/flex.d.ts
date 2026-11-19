@@ -47,6 +47,7 @@ declare namespace pFlex {
     export type THandler<_TArgs = any[], _TReturn = any> = TFunc<_TArgs, _TReturn> | IBinder<_TArgs, _TReturn>;
 
     export type TKey = string | symbol | number;
+    export type TIterable<_TType> = Iterable<_TType> | ArrayLike<_TType>;
     export type TArrays<TType> = (readonly TType[] | TType[]);
     export type TFlexReadonly<_TType> = _TType | Readonly<_TType>;
 

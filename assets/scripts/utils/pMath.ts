@@ -114,15 +114,16 @@ export function rand<T>(arr: pFlex.TArray<T>, ...arrs: T[]): T {
  * Get multiple unique random elements.
  * Time: O(n) - Fisher-Yates partial shuffle.
  */
-export function rands<T>(amount: number, arr: pFlex.TArray<T>, ...arrs: T[]): T[] {
-    const list = pArray.flatter(arr, ...arrs);
-    if (amount >= list.length) return list;
+export function rands<T>(amount: number, arr: Set<T>): T[]
+export function rands<T>(amount: number, arr: Set<T> | pFlex.TArray<T>, ...arrs: T[]): T[] {
+    const list = arr instanceof Set ? Array.from(arr) : pArray.flatter(arr, ...arrs);
+    if (amount >= list.length) return list as T[];
 
     for (let i = 0; i < amount; i++) {
         const j = i + Math.floor(Math.random() * (list.length - i));
         [list[i], list[j]] = [list[j], list[i]];
     }
-    return list.slice(0, amount);
+    return list.slice(0, amount) as T[];
 }
 
 export function toClock(time: number, hasHour: boolean = false) {
