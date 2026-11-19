@@ -1,218 +1,308 @@
-# `pts-core` - Foundation Framework & Core Runtime
+# pTS-Core
 
-> **Author**: pTSern  
-> **Version**: `1.0.0`  
-> **Cocos Creator Compatibility**: `>= 3.8.0`  
-> **Category**: Core Infrastructure & Runtime Framework
+The foundational runtime and editor extension for the **pTS** ecosystem in **Cocos Creator 3.8.8+**. It provides the global `pTS.$` event/cache primitives, the `pTS.bridge` sync/async reactive store, the `pTSAsset` ScriptableObject base class and decorators, a modular `utils` library, ready-to-use Cocos UI/Renderer/Controller/Handler/Event/Smart components, Box2D 2D physics bindings, object pooling, and a Scene reflection & Gizmo bridge.
 
 ---
 
-## 1. Overview
+## Features
 
-`pts-core` is the central dependency and architectural foundation for the entire **pTS** ecosystem within Cocos Creator. It provides core base classes (such as `pTSAsset` for ScriptableObject workflows), high-performance decoupled event dispatching (`pDriver` and `pEngine.Json`), reactive data watchers, smart UI component systems, robust object pooling, utility libraries, and the editor's scene execution bridge (`src/_cc.js`).
-
-All sibling extensions (`pts-asset`, `pts-action`, `pts-box2d`, `pts-finite-state`, `pts-language`, `pts-bundle-list`, etc.) build directly upon `pts-core`.
+- **Global `pTS.$` Runtime Primitives**: Zero-dependency `eventify` (linked-list event emitter, class decorator, or instance enhancer) and `cache()` (V8 dictionary-mode null-prototype table).
+- **Reactive `pTS.bridge` Store**: Global key-value data bridge with `get` / `set` / `add`, bulk multi-key access, `on` / `once` / `off` / `clear` lifecycle events, and `bridge.replican(...)` for spawning isolated sync or async stores.
+- **`pTSAsset` & Contract Decorators**: ScriptableObject-style `cc.Asset` base class (`pTSAsset`, `pTSAsset.Data`, `pTSAsset.Event`) with `@menu` / `@pTSAsset.menu` (safely guarding `_decorator.menu` against Cocos warning `3623`), `@implement` / `imps` runtime contract checking, and `@gizmo` / `EditorGizmo`.
+- **Modular Utility Library (`db://pts-core/scripts/utils`)**: `pArray`, `pAsync`, `pClass`, `pConst`, `pDriver`, `pECS`, `pEngine`, `pGizmo`, `pGlobal`, `pLazy`, `pMath`, `pObject`, and `pString`.
+- **Rich Cocos Component Suite**: Prebuilt **UI** (`UI.DualScroller`, `UI.Data.Displayer`), **Renderer** (`MaskPolygon`, `MeshPolygonSprite` with custom editor gizmos), **Controller** (`Controller.Physics2DSystem`), **Handler**, **Event**, **Smart**, **Config**, **Data**, **Dom**, **Parameter**, and **Shared** components.
+- **Box2D 2D Physics Plugin**: Bundled `physics_2d/b2.js` runtime plugin paired with `Controller.Physics2DSystem`.
+- **Editor Settings & Scene Bridge**: Dockable **pTS-Core Settings** panel (`implement_check` toggle in Project Settings) and `src/_cc.js` scene-process bridge for class/component reflection, AnimGraph inspection, and custom SVG gizmos.
 
 ---
 
-## 2. Process Architecture & Topology
+## Requirements
 
+- **Cocos Creator**: `>= 3.8.8`
+- **Node.js**: Required only when building extension TypeScript sources (`source/` -> `dist/`) or running regression tests.
+
+---
+
+## Installation & Setup
+
+1. Copy the `pts-core` folder into your project's `extensions/` directory:
+   ```text
+   <your-project>/extensions/pts-core
+   ```
+2. Build the extension (if `dist/` is not already compiled):
+   ```bash
+   cd extensions/pts-core
+   npm install
+   npm run build
+   ```
+3. Enable **pts-core** in Cocos Creator via **Extension → Extension Manager**.
+4. Configure optional settings via **Extension → pTS-Core → Settings** or **Project → Project Settings → pTS Core** (`Implement Check`).
+
+> All scripts and plugins under `assets/` are automatically mounted read-only into Cocos Creator's Asset Database as `db://pts-core/`.
+
+---
+
+## Architecture Overview
+
+```mermaid
+flowchart LR
+    subgraph Editor["Cocos Creator Editor"]
+        direction TB
+        Main["Main Process<br/>(bootstrap.js & source/main.ts)"]
+        Panel["pTS-Core Settings Panel<br/>(source/panel.ts)"]
+        SceneBridge["Scene Process Bridge<br/>(src/_cc.js & src/gizmo/)"]
+    end
+
+    subgraph AssetDB["Mounted AssetDB (db://pts-core/)"]
+        direction TB
+        Plugins["Built-in & Physics Plugins<br/>($.pts.js, bridge.pts.js, b2.js)"]
+        Scripts["Runtime Scripts<br/>(pTSAsset, utils, Components, pooler)"]
+    end
+
+    subgraph Runtime["Game Runtime"]
+        direction TB
+        GlobalNS["globalThis.pTS<br/>(pTS.$, pTS.bridge, debug pTS.utils)"]
+        B2["globalThis.b2<br/>(Box2D 2D Physics)"]
+        GameCode["Project & Sibling Extensions<br/>(pts-ecs, pts-asset, game scripts)"]
+    end
+
+    Main --> Panel
+    Main <-->|"execute-scene-script"| SceneBridge
+    Main -->|"asset-db.mount (readonly)"| AssetDB
+    Plugins --> GlobalNS
+    Plugins --> B2
+    GlobalNS --> GameCode
+    B2 --> GameCode
+    Scripts -->|"ES Module Imports"| GameCode
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Cocos Creator Main Process                   │
-│   (Extension Lifecycle, Menus, IPC Routing, Package Config)     │
-└────────────────┬───────────────────────────────┬────────────────┘
-                 │                               │
-                 ▼                               ▼
-┌─────────────────────────────────┐   ┌───────────────────────────┐
-│       Scene Process Bridge      │   │     AssetDB Contribution   │
-│          (`src/_cc.js`)         │   │   Mounted to `db://assets`│
-│  - get_all_pts_inheritance_chains│   │   - Read-only mount       │
-│  - find_node_by_uuid            │   │   - Shared runtime scripts│
-│  - get_component_by_uuid        │   │   - Precompiled plugins   │
-└────────────────┬────────────────┘   └─────────────┬─────────────┘
-                 │                                  │
-                 └───────────────┬──────────────────┘
-                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Game / Scene Execution Context               │
-│                                                                 │
-│  ┌────────────────────┐ ┌───────────────────┐ ┌───────────────┐ │
-│  │     pTSAsset       │ │   Event Driver    │ │  Pooler Core  │ │
-│  │ (ScriptableObject) │ │ (pDriver/Listeners│ │ (Node/Object) │ │
-│  └────────────────────┘ └───────────────────┘ └───────────────┘ │
-│  ┌────────────────────┐ ┌───────────────────┐ ┌───────────────┐ │
-│  │  Reactive Watchers │ │     Smart UI      │ │    Utils      │ │
-│  │  (Data Bindings)   │ │  (DualScroller,..)│ │ (pEngine,...) │ │
-│  └────────────────────┘ └───────────────────┘ └───────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Key Contributions in `package.json`:
-* **`asset-db.mount`**: Mounts `./assets` to the project's Asset Database (`readonly: true`). Exposes all core scripts, UI components, watchers, and plugins to game code without manual copying.
-* **`scene.script`**: Registers `./src/_cc.js` as the scene bridge script. This executes inside the Cocos Creator Engine runtime context where `cc` and `cce` are globally present, enabling reflection queries from the main process.
 
 ---
 
-## 3. Core Subsystems & Runtime APIs
+## Safe Plugin Architecture
 
-### 3.1. `pTSAsset` Base Class (`assets/scripts/pTSAsset.ts`)
-The foundational class for data-driven ScriptableObjects in Cocos Creator:
-* Extends `cc.Asset` to integrate natively with Cocos Creator's asset serialization pipeline.
-* **Type Identification**: Every subclass maintains a distinct type metadata identifier (`__type__`), used by the editor's drag-and-drop validation system and Inspector reflection.
-* **Deep Cloning**: Provides an automated `.clone()` pipeline using `pObject.clone()` that duplicates nested structures, maps, arrays, and primitive values while properly re-binding IDs.
-* **Dirty Flagging & Serialization**: Supports runtime mutation tracking and hydration from raw JSON payloads.
+`pts-core` ships built-in runtime plugins under `assets/plugins/buitin/` (`$.pts.js`, `bridge.pts.js`) that initialize before regular ES modules across **Editor**, **Web**, **Native**, **Preview**, and **MiniGame** targets.
 
-```typescript
-import { _decorator } from 'cc';
-import { pTSAsset } from 'db://pts-core/scripts/pTSAsset';
+To avoid leaking local symbols or breaking across different JS engines and Cocos Creator's enclosed plugin sandbox, both scripts follow two strict conventions:
 
-const { ccclass, property } = _decorator;
+1. **Cross-Environment Root IIFE**:
+   ```js
+   (function (root) {
+       "use strict";
+       // Attach to root.pTS.$ / root.pTS.bridge
+   })(
+       typeof globalThis !== "undefined"
+           ? globalThis
+           : (typeof window !== "undefined"
+               ? window
+               : (typeof self !== "undefined" ? self : this))
+   );
+   ```
+2. **Enclosed Plugin Metadata (`.js.meta`)**:
+   ```json
+   {
+       "isPlugin": true,
+       "loadPluginInEditor": true,
+       "loadPluginInWeb": true,
+       "loadPluginInNative": true,
+       "loadPluginInPreview": true,
+       "loadPluginInMiniGame": true,
+       "executionScope": "enclosed",
+       "simulateGlobals": ["window", "self", "global"]
+   }
+   ```
 
-@ccclass('PlayerConfig')
-export class PlayerConfig extends pTSAsset {
-    @property({ tooltip: 'Base maximum health' })
-    public maxHealth: number = 100;
+The Box2D plugin (`assets/plugins/physics_2d/b2.js`) uses `"executionScope": "global"` with `"simulateGlobals": ["b2"]` so `b2` is exposed globally to `Controller.Physics2DSystem` and physics extensions.
 
-    @property({ tooltip: 'Base movement speed' })
-    public moveSpeed: number = 250;
+---
+
+## Core Subsystems
+
+### 1. Built-in Globals (`assets/plugins/buitin/`)
+
+| Global | Typings | Purpose |
+| :--- | :--- | :--- |
+| **`pTS.$`** | `$.pts.d.ts` | `eventify` (attach `on`, `once`, `off`, `clear`, `flush`, and optional `emit` to classes or objects) and `cache()` (null-prototype dictionary object). |
+| **`pTS.bridge`** | `bridge.pts.d.ts` | Global reactive key-value store (`get`, `set`, `add`, `on`/`once`/`off`/`clear`) plus `bridge.replican(opt)` to create custom sync, async (`asynctify`), eventified, or ambiguous stores. |
+| **`b2`** | `physics_2d/b2.js` | Box2D 2D physics runtime used by `Controller.Physics2DSystem` and physics extensions. |
+
+### 2. `pTSAsset` & Decorators (`assets/scripts/pTSAsset.ts`)
+
+- **`pTSAsset`**: Abstract `cc.Asset` base class with lifecycle hooks (`_onLoad`, `_onReleased`), deep cloning (`pTSAsset.clone`), and event routing (`pTSAsset.Data`, `pTSAsset.Event`).
+- **`@menu` / `@pTSAsset.menu`**: Registers creation menu paths for custom `pTSAsset` subclasses and intercepts `_decorator.menu` on non-Component classes to prevent Cocos warning `3623`.
+- **`@implement` / `imps` / `getComponent`**: Runtime interface/contract registration and component lookup via `pClass` (with cyclic/diamond graph termination and optional editor-time validation controlled by `implement_check`).
+
+### 3. Utility Library (`assets/scripts/utils/index.ts`)
+
+| Module | Capabilities |
+| :--- | :--- |
+| **`pArray`** | Flattening, chunking, shuffling, deduplication, min/max and nearest-value search. |
+| **`pAsync`** | `DynamicBarrier`, `DynamicResolver`, `Mutex`, `Task`, pooled promises, and async delays. |
+| **`pClass`** | `@ccclass` reflection, inheritance queries, `@implement` contract resolution (`isImplementedFrom`), and contract-aware `getComponent` / `getComponentsInChildren`. |
+| **`pConst`** | Engine/editor constants, vector defaults, and shared no-op stubs. |
+| **`pDriver`** | Prioritized pub/sub event driver with `once` and clean unsubscription. |
+| **`pECS`** | Core lightweight ECS helper primitives. |
+| **`pEngine`** | Node/component traversal helpers, JSON event routing schemas, and device abstractions. |
+| **`pGizmo`** | `@gizmo` decorator and `EditorGizmo` base class for custom 2D/SVG editor gizmos. |
+| **`pGlobal`** | Structured logging, clipboard helpers, and download utilities. |
+| **`pLazy`** | Deferred lazy evaluation and initialization helpers. |
+| **`pMath`** | Bezier curves, angle/direction helpers, bounded scaling, random helpers, and clock formatting. |
+| **`pObject`** | Deep cloning, copying, method introspection, and method hooking. |
+| **`pString`** | UUID generation, formatting, KMB number abbreviations, and regex helpers. |
+
+> In `DEBUG` builds, `utils/index.ts` also mirrors the utility modules onto `globalThis.pTS.utils` for quick console inspection.
+
+### 4. Cocos Components (`assets/scripts/Components/`)
+
+| Category | Key Components |
+| :--- | :--- |
+| **UI** | `UI.DualScroller` (`Controller`, `NavBar`, `NavIcon`, `NavIcons`, `NavIndicator`, `Page`, `AutoHidePage`), `UI.Data.Displayer` |
+| **Renderer** | `MaskPolygon` (+ `MaskPolygonGizmo`), `MeshPolygonSprite` (+ `MeshPolygonSpriteGizmo`) |
+| **Controller** | `Controller.Physics2DSystem` |
+| **Handler** | `Handler.Component`, `Handler.Components`, `Handler.Selector` |
+| **Event** | `Event.Driver`, `Event.Listener`, `Event.Observer`, `Event.Bridge`, `Event.Clickable`, `Event.Emittable`, `Event.Awaitable`, `Event.Flexer`, `Event.LifeCycle` |
+| **Smart** | `Smart.Button`, `Smart.Label` (`CountDown`, `Number`, `RunningNumber`, `TimerByNum` hookers), `Smart.Layout` (`Horizontal`, `Vertical`), `Smart.ProgressBar`, `Smart.Toggle`, `Smart.PersistentNode`, `Smart.ResizeToCanvas`, `Smart.Pipeline`, `Smart.Limiter`, `Smart.StartUp` |
+| **Config / Data / Dom / Shared** | `Config.Base` / `Nodes` / `Smart` / `SpriteFrame`, `Data.JsonStorage`, `Dom.SyncNode`, `Parameter.Component` / `Selector`, `Shared.Pool`, `Shared.Updater` |
+
+Additional runtime subsystems live under `assets/scripts/pooler/` (`Pooler.Core`, `Pooler.Node`, `Pooler.Node.Asset`), `assets/scripts/editor/Watcher/` (reactive property/node/asset watchers), and `assets/scripts/data/` (`manager.ts`, `storage.ts`).
+
+---
+
+## Runtime Usage
+
+### 1. Eventifying an Object or Class with `pTS.$.eventify`
+
+```ts
+interface IPlayerEvents {
+    on_damage: (amount: number, source: string) => void;
+    on_die: () => void;
+}
+
+// Instance mode: attach on/once/off/clear/flush and get a typed emit function
+const target: Record<string, any> = {};
+const emit = pTS.$.eventify<IPlayerEvents>()(target, false, false);
+
+target.on("on_damage", (amount: number, source: string) => {
+    console.log(`Took ${amount} damage from ${source}`);
+});
+
+emit("on_damage", 25, "slime");
+
+// Decorator mode: attach event methods directly onto a class prototype
+@pTS.$.eventify
+class CombatBus {
+    declare on: pTS.$.IDriver<IPlayerEvents>["on"];
+    declare emit: pTS.$.IDriver<IPlayerEvents>["emit"];
 }
 ```
 
----
+### 2. Using `pTS.bridge` (Global & Custom Replican Stores)
 
-### 3.2. Event Bus & Driver Engine (`pDriver`, `pEngine.Json`)
-A decoupled, high-performance publish-subscribe architecture powering system communication without hard component coupling.
-
-* **`pDriver` (`assets/scripts/utils/pDriver.ts`)**:
-  * Lightweight handler and dispatcher supporting prioritized execution, one-shot subscriptions (`once`), and clean unsubscribe callbacks.
-* **`pEngine.Json` (`assets/scripts/utils/pEngine.ts`)**:
-  * Strongly-typed event and parameter routing schema.
-  * Links sender nodes, payload dictionaries, and receiver handlers across independent UI and gameplay modules.
-* **Event Components (`assets/scripts/Components/Event/`)**:
-  * `Event.Driver`: Component wrapper attaching driver listeners to node lifecycles (`onEnable`/`onDisable`).
-  * `Event.Listener` & `Event.Observer`: Declarative inspector-configured event hooks.
-  * `Event.Bridge`: Binds external DOM, window, or webview events directly into Cocos Creator's event loop.
-
----
-
-### 3.3. Reactive Watcher Suite (`assets/scripts/editor/Watcher/`)
-Components providing reactive data-binding between underlying state values and UI / gameplay components:
-
-* `Watcher.Property`: Monitors arbitrary object properties and triggers registered handlers when values change.
-* `Watcher.Primitive`, `Watcher.Boolean`, `Watcher.Number`: Primitive-optimized watchers with threshold and diffing logic.
-* `Watcher.Node`: Listens to scene hierarchy mutations (active state, parent reordering, position alterations).
-* `Watcher.Component`: Detects component enablement, addition, or destruction.
-* `Watcher.pTSAsset`: Observes properties inside loaded ScriptableObject assets and updates attached UI views dynamically.
-
----
-
-### 3.4. Smart Component System (`assets/scripts/Components/Smart/`)
-Ready-to-use behaviors that eliminate repetitive boilerplate:
-
-* `Smart.Button`: Enhanced button component supporting debounce timers, auto-disable states, tweened press animations, and sound effects.
-* `Smart.Label`: Dynamic text formatter supporting running number animations (`Hooker.RunningNumber`), countdown timers (`Hooker.CountDown`), and localized numeric formatting.
-* `Smart.ProgressBar`: Smooth interpolation of progress bar values with easing curves and threshold triggers.
-* `Smart.PersistentNode`: Automates `game.addPersistRootNode` lifecycle management across scene transitions.
-* `Smart.ResizeToCanvas`: Dynamically resizes UI elements to match active canvas design resolution and safe-area boundaries.
-* `UI.DualScroller` (`assets/scripts/Components/UI/DualScroller/`):
-  * Modular multi-page scroller system with synchronized navigation bars (`NavBar`), icons (`NavIcon`), and active indicators (`NavIndicator`).
-  * Supports auto-hiding pages (`AutoHidePage`), snap points, and smooth drag mechanics.
-
----
-
-### 3.5. High-Performance Object Pooling (`assets/scripts/pooler/`)
-* **`Pooler.Core`**: Generic TypeScript object pool supporting pre-warming, max capacity bounds, allocation callbacks, and reset hooks.
-* **`Pooler.Node`**: Specialized node pool for `cc.Node` and `cc.Prefab` instances. Eliminates garbage collection spikes during bullet hell, particle spawning, or large list view scrolling.
-* **`Shared.Pool`**: Globally accessible static pooling registry for cross-system instance sharing.
-
----
-
-### 3.6. Utility Library Suite (`assets/scripts/utils/`)
-
-| Module | Core Functions / Capabilities |
-|---|---|
-| **`pArray`** | Array slicing, chunking (`chunks`), min/max extractors, shuffling (`shuffle`), unique deduplication, nearest value search (`findSmallerNearest`). |
-| **`pAsync`** | Dynamic barrier (`DynamicBarrier`), promise resolvers (`DynamicResolver`), cancellation tokens (`Task`), pooled promises (`Pool`), mutex locks (`Mutex`), delay/countdown routines. |
-| **`pClass`** | Reflection utilities: `getAllCCClasses()`, `getClassName()`, `isInheritedFrom()`, `getInheritedClasses()`, contract checking (`isComponentOfContract`), runtime component queries (`getComponent`, `getComponentsInChildren`). |
-| **`pConst`** | Global engine constants, editor preview flags (`IS_EDITOR`, `IS_TEST`), empty function stubs (`VOID_FUNC`), vector constants. |
-| **`pEngine`** | Cross-platform abstractions: device detection (`Device`), node hierarchy traversals (`NodeUtils`), component query wrappers (`CompUtils`). |
-| **`pGlobal`** | Global logging system (`Logger.group`, `warn`, `error`), clipboard bridge (`addToClipboard`), asset download trigger (`download`). |
-| **`pMath`** | Direction-to-Euler conversion (`convertDirToEuler`), quadratic Bezier calculations (`getQuadraticBezier`), bounded scaling (`scaleImageInsideBound`), clock formatters (`toClock`), pseudo-random generators (`rand`, `rands`). |
-| **`pObject`** | Deep cloning (`clone`), property copying (`assign`, `copy`), chain binding (`actChainBinder`), method introspection (`getAllMethodNames`), method interception (`hook`). |
-| **`pString`** | String interpolation, UUID generator (`uuid`), number abbreviations (`formatKMB`, 1.2M / 4.5K), comma/dot formatters, regex extraction. |
-
-#### Contract resolution and regression checks
-
-`pClass.isImplementedFrom()` supports native inheritance and registered `@implement` contracts without re-entering the custom `Symbol.hasInstance` hook. Each lookup shares its visited constructors across contract branches, so cyclic or diamond-shaped metadata terminates without repeated traversal. Component queries retain support for constructor and registered-name contracts.
-
-From this extension directory, install development dependencies with `npm install`, then run `npm run test:contract-resolution`. The regression suite transpiles the runtime module and checks negative lookups, positive and inherited implementations, custom `instanceof` behavior, and cyclic contract graphs. The local TypeScript development dependency also supplies the compiler for `npm run build`.
-
----
-
-## 4. Scene Process Bridge (`src/_cc.js`)
-
-`pts-core` contributes a scene script executed inside the Cocos Creator Engine runtime context via:
-```javascript
-Editor.Message.request('scene', 'execute-scene-script', {
-    name: 'pts-core',
-    method: '<method_name>',
-    args: [...]
+```ts
+// Global reactive bridge
+pTS.bridge.on("set", (key, new_val, old_val) => {
+    console.log(`[bridge] ${String(key)}:`, old_val, "->", new_val);
 });
+
+pTS.bridge.set("score", 100, "combo", 3);
+const { score, combo } = pTS.bridge.get("score", "combo");
+
+// Isolated typed store via replican()
+interface IAudioState {
+    bgm_volume: number;
+    sfx_muted: boolean;
+}
+
+const audio_store = pTS.bridge.replican<IAudioState>({
+    is_dict_mode: true,
+    is_eventify: true,
+});
+
+audio_store.set("bgm_volume", 0.8);
+const vol = audio_store.get("bgm_volume"); // number | null | undefined
 ```
 
-### Available Bridge Methods:
+### 3. Authoring a Custom `pTSAsset`
 
-#### `get_all_pts_inheritance_chains`
-* **Purpose**: Gathers the complete class inheritance hierarchy of all registered `@ccclass` definitions deriving from `pTSAsset` or other specified base classes.
-* **Used by**: `pts-asset` to validate drag-and-drop operations, asset picker filtering, and custom inspector rendering.
-* **Returns**:
-  ```json
-  {
-    "HeroConfig": ["PlayerConfig", "pTSAsset", "Asset"],
-    "EnemyConfig": ["CharacterConfig", "pTSAsset", "Asset"]
-  }
-  ```
+```ts
+import { _decorator } from "cc";
+import { pTSAsset, menu } from "db://pts-core/scripts/pTSAsset";
 
-#### `find_node_by_uuid(uuid)`
-* **Purpose**: Traverses the live scene graph and active prefab root to return the node matching the given UUID.
+const { ccclass, property } = _decorator;
 
-#### `get_component_by_uuid(uuid)`
-* **Purpose**: Locates a specific component instance across active scene nodes by component UUID.
+@ccclass("HeroConfig")
+@menu("Game/Config/HeroConfig")
+export class HeroConfig extends pTSAsset {
+    @property({ tooltip: "Base maximum health" })
+    public max_health: number = 100;
+
+    @property({ tooltip: "Movement speed in px/s" })
+    public move_speed: number = 240;
+}
+```
+
+### 4. Importing `utils` Modules
+
+```ts
+import { pArray, pAsync, pClass, pMath, pString } from "db://pts-core/scripts/utils";
+
+const chunks = pArray.chunks([1, 2, 3, 4, 5], 2);
+const label = pString.formatKMB(12500);
+const clamped = pMath.rand(10, 20);
+```
 
 ---
 
-## 5. Built-in Plugins & Global Definitions
+## Directory Structure
 
-Located under `assets/plugins/buitin/`:
-* **`$.pts.js` / `$.pts.d.ts`**: Injects the global `$` namespace containing global helper shortcuts, debug hooks, and runtime configurations.
-* **`bridge.pts.js` / `bridge.pts.d.ts`**: Global bridge definitions for web platform interoperability.
-* **`physics_2d/b2.js`**: Box2D WASM/JS physics runtime bindings utilized by `pts-box2d`.
-
----
-
-## 6. Directory Structure
-
-```
-pts-core/
-├── assets/                          # Mounted as db://assets/ (read-only)
+```text
+extensions/pts-core/
+├── assets/                          # Mounted read-only as db://pts-core/
 │   ├── plugins/
-│   │   ├── buitin/                  # Global $ runtime scripts & typings
-│   │   └── physics_2d/              # Box2D core JS runtime
+│   │   ├── buitin/                  # $.pts.{js,d.ts} & bridge.pts.{js,d.ts}
+│   │   └── physics_2d/              # Box2D 2D physics plugin (b2.js)
 │   └── scripts/
-│       ├── Components/              # Smart, Event, Handler, UI components
-│       ├── data/                    # Storage and state manager
-│       ├── editor/Watcher/          # Reactive property watchers
-│       ├── helper/                  # Tween, color, spawner, selector helpers
-│       ├── interfaces/              # Common contracts (Event, CC, Object)
-│       ├── pooler/                  # Node & object pooling engines
-│       ├── pTSAsset/                # pTSAsset data & event bindings
-│       ├── pTSAsset.ts              # Core ScriptableObject base class
-│       └── utils/                   # pArray, pAsync, pClass, pDriver, pEngine...
-├── bootstrap.js                     # Extension entry point
-├── package.json                     # Cocos Creator extension manifest
+│       ├── Components/              # Config, Controller, Data, Dom, Event, Handler,
+│       │                            # Helper, Parameter, Renderer, Shared, Smart, Type, UI
+│       ├── data/                    # Persistent storage & data manager
+│       ├── editor/                  # Reactive Watcher & Smart editor helpers
+│       ├── helper/                  # Common, Dictionary, Enums, Param, Selector, UI
+│       ├── interfaces/              # Shared TypeScript contracts (cc, event, object)
+│       ├── pooler/                  # Pooler.Core, Pooler.Node, Pooler.Node.Asset
+│       ├── pTSAsset/                # pTSAsset.Data, pTSAsset.Event
+│       ├── pTSAsset.ts              # ScriptableObject base class & @menu/@implement exports
+│       ├── flex.d.ts                # Global pFlex utility types
+│       └── utils/                   # pArray, pAsync, pClass, pDriver, pECS, pEngine,
+│                                    # pGizmo, pGlobal, pLazy, pMath, pObject, pString
+├── scripts/
+│   └── test-contract-resolution.js  # Regression suite for pClass.isImplementedFrom()
+├── source/
+│   ├── main.ts                      # Extension lifecycle & settings IPC handlers
+│   └── panel.ts                     # Dockable pTS-Core Settings panel
 ├── src/
-│   ├── _cc.js                       # Scene process reflection bridge
-│   └── _doc.js                      # JSDoc type definitions for editor bridge
+│   ├── _cc.js                       # Scene-process reflection, AnimGraph & runtime bridge
+│   ├── _doc.js                      # Scene bridge JSDoc definitions
+│   └── gizmo/                       # Custom SVG/Editor gizmo engine & registry
+├── bootstrap.js                     # Extension entry point
+├── package.json                     # Cocos Creator v2 extension manifest
 └── tsconfig.json
+```
+
+---
+
+## Development
+
+```bash
+cd extensions/pts-core
+
+# Install TypeScript dev dependency
+npm install
+
+# One-time build (source/ -> dist/)
+npm run build
+
+# Watch mode during development
+npm run watch
+
+# Run @implement contract-resolution regression tests
+npm run test:contract-resolution
 ```
