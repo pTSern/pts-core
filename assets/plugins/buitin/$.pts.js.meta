@@ -11,11 +11,14 @@
     "loadPluginInEditor": true,
     "loadPluginInWeb": true,
     "loadPluginInNative": true,
+    "loadPluginInPreview": true,
     "loadPluginInMiniGame": true,
     "isPlugin": true,
     "executionScope": "enclosed",
     "simulateGlobals": [
-      "pTS"
+      "window",
+      "self",
+      "global"
     ]
   }
 }

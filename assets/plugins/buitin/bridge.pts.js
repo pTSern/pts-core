@@ -1,4 +1,6 @@
-const _pT$ = globalThis["pTS"] || {},
+(function (root) {
+"use strict";
+const _pT$ = root["pTS"] || {},
     _$ = _pT$["$"];
 if (_$) {
     function _replican(opt = undefined) {
@@ -166,3 +168,4 @@ if (_$) {
     _.replican = _replican;
     _pT$["bridge"] = _;
 }
+})(typeof globalThis !== "undefined" ? globalThis : (typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : this)));

@@ -44,10 +44,18 @@ export {
 
 export { pTSAsset, implement, imps, getComponent, menu } from "../pTSAsset";
 
-if(DEBUG) {
-    window['pTS'] = window['pTS'] || js.createMap(true)
-    window['pTS']['utils'] = {
-        pArray, pClass, pDriver, pMath, pString, pAsync, pObject, pEngine, pGlobal, pConst, pLazy
-, pGizmo
-    }
+if (DEBUG) {
+    const _$root: any =
+        typeof globalThis !== "undefined"
+            ? globalThis
+            : typeof window !== "undefined"
+                ? window
+                : typeof self !== "undefined"
+                    ? self
+                    : {};
+    _$root.pTS = _$root.pTS || js.createMap(true);
+    _$root.pTS.utils = {
+        pArray, pClass, pDriver, pMath, pString, pAsync, pObject, pEngine, pGlobal, pConst, pLazy,
+        pGizmo
+    };
 }
