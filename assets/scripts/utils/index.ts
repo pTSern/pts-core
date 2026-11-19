@@ -13,9 +13,6 @@ import * as pLazy from "./pLazy";
 import { pECS } from "./pECS";
 import * as pGizmo from "./pGizmo";
 import { EditorGizmo, gizmo } from "./pGizmo";
-import { MaskPolygon, MaskPolygonGizmo } from "../Components/Renderer/MaskPolygon";
-import { MeshPolygonSprite, MeshPolygonSpriteGizmo } from "../Components/Renderer/MeshPolygonSprite";
-import { Renderer_SpriteBatcher } from "../Components/Renderer/Renderer.SpriteBatcher";
 import { DEBUG } from "cc/env";
 import { js } from "cc";
 
@@ -37,11 +34,6 @@ export {
     EditorGizmo,
     gizmo
 ,
-    MaskPolygon,
-    MaskPolygonGizmo,
-    MeshPolygonSprite,
-    MeshPolygonSpriteGizmo,
-    Renderer_SpriteBatcher
 };
 
 export { pTSAsset, implement, imps, getComponent, menu } from "../pTSAsset";
