@@ -1220,14 +1220,6 @@ function _evaluatePtsLive(className, currentValues) {
     }
     _lastEvaluatedValues[className] = JSON.parse(JSON.stringify(currentValues || {}));
 
-    try {
-        if (typeof instance.onFocusInEditor === 'function') {
-            instance.onFocusInEditor();
-        }
-    } catch (err) {
-        console.error(`[pTS-Core] Error in onFocusInEditor for ${className}:`, err);
-    }
-
     const gettersInfo = _getGettersOfClass(ctor);
     const gettersValues = {};
     for (const p in gettersInfo) {
@@ -1289,11 +1281,6 @@ function _evaluatePtsLive(className, currentValues) {
                         const rawItem = arr[i];
                         const itemInst = new itemCtor();
                         _populateInstance(itemInst, rawItem?.__value__ || rawItem, null, true);
-                        try {
-                            if (typeof itemInst.onFocusInEditor === 'function') {
-                                itemInst.onFocusInEditor();
-                            }
-                        } catch (err) {}
 
                         const itemVis = {};
                         for (const ip of itemProps) {
@@ -1405,13 +1392,7 @@ function getLiveInstance(uuid, className, observerId) {
 }
 
 function _dumpLiveInstance(instance, className) {
-    if (instance && typeof instance.onFocusInEditor === 'function') {
-        try {
-            instance.onFocusInEditor();
-        } catch (err) {
-            console.error(`[pTS-Core] Error in onFocusInEditor for live instance:`, err);
-        }
-    }
+    // onFocusInEditor is already invoked once per bound live instance in _publishRuntimeObserver().
     const ctor = instance.constructor || (className ? cc.js.getClassByName(className) : null);
     if (!ctor) return null;
     _toDumperData(ctor);
