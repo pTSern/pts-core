@@ -14,9 +14,10 @@
     },
     "panels": {
         "default": {
-            "title": "pTS-Core Settings",
+            "title": "pTS Core",
             "type": "dockable",
             "main": "dist/panel.js",
+            "icon": "./static/icon.png",
             "flags": {
                 "save": true
             },

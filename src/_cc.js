@@ -441,49 +441,117 @@ function _getGettersOfClass(ctor) {
     const proto = ctor.prototype;
     if (!proto) return getters;
 
-    const props = ctor.__props__ || [];
-    for (const p of props) {
+    const attrs = (typeof cc !== 'undefined' && cc.Class && cc.Class.Attr)
+        ? (cc.Class.Attr.getClassAttrs(ctor) || {})
+        : {};
+    const del = (typeof cc !== 'undefined' && cc.Class && cc.Class.Attr && cc.Class.Attr.DELIMETER) || '$_$';
+
+    const propSet = new Set(ctor.__props__ || []);
+    const assetProto = (typeof cc !== 'undefined' && cc.Asset) ? cc.Asset.prototype : null;
+    const objProto = (typeof cc !== 'undefined' && cc.Object) ? cc.Object.prototype : null;
+    let curr = proto;
+    while (curr && curr !== Object.prototype && curr !== assetProto && curr !== objProto) {
+        for (const key of Object.getOwnPropertyNames(curr)) {
+            if (key !== 'constructor' && !key.startsWith('__')) {
+                propSet.add(key);
+            }
+        }
+        curr = Object.getPrototypeOf(curr);
+    }
+
+    for (const p of propSet) {
         const desc = _findPropertyDescriptor(proto, p);
-        if (desc && typeof desc.get === 'function') {
+        const hasGet = Boolean((desc && typeof desc.get === 'function') || attrs[`${p}${del}hasGetter`]);
+        const hasSet = Boolean((desc && typeof desc.set === 'function') || attrs[`${p}${del}hasSetter`]);
+        if (hasGet || hasSet) {
             getters[p] = {
-                hasSetter: typeof desc.set === 'function',
-                readonly: typeof desc.set !== 'function'
+                hasGetter: hasGet,
+                hasSetter: hasSet,
+                readonly: hasGet && !hasSet
             };
         }
     }
     return getters;
 }
 
-function _enrichDumpWithGetters(dump, ctor) {
-    if (!dump || !dump.value || !ctor) return;
-    const gettersInfo = _getGettersOfClass(ctor);
-    for (const g in gettersInfo) {
-        if (dump.value[g] && typeof dump.value[g] === 'object') {
-            dump.value[g].isGetter = true;
-            if (gettersInfo[g].hasSetter) {
-                dump.value[g].hasSetter = true;
-            }
-            if (gettersInfo[g].readonly) {
-                dump.value[g].readonly = true;
+function _enrichDumpWithGetters(dump, ctor, instance = null) {
+    if (!dump || !dump.value) return;
+    const resolvedCtor = ctor ||
+        (instance && instance.constructor && instance.constructor !== Object ? instance.constructor : null) ||
+        ((dump.actualType || dump.type) ? cc.js.getClassByName(dump.actualType || dump.type) : null);
+
+    if (resolvedCtor) {
+        const gettersInfo = _getGettersOfClass(resolvedCtor);
+        for (const g in gettersInfo) {
+            if (dump.value[g] && typeof dump.value[g] === 'object') {
+                dump.value[g].isGetter = true;
+                if (gettersInfo[g].hasSetter) {
+                    dump.value[g].hasSetter = true;
+                }
+                if (gettersInfo[g].readonly) {
+                    dump.value[g].readonly = true;
+                }
             }
         }
+        if (Object.keys(gettersInfo).length > 0 && !dump.__getters__) {
+            dump.__getters__ = gettersInfo;
+        }
     }
+
     for (const key of Object.keys(dump.value)) {
         const item = dump.value[key];
-        if (item && item.value && typeof item.value === 'object' && !Array.isArray(item.value)) {
-            const nestedType = item.actualType || item.type;
-            const nestedCtor = nestedType ? cc.js.getClassByName(nestedType) : null;
-            if (nestedCtor) {
-                _enrichDumpWithGetters(item, nestedCtor);
+        if (!item || typeof item !== 'object') continue;
+        if (item.hasGetter || item.hasSetter) {
+            item.isGetter = true;
+            if (item.hasGetter && !item.hasSetter) {
+                item.readonly = true;
             }
-        } else if (item && Array.isArray(item.value)) {
-            for (const elem of item.value) {
+        }
+        if (item.value && typeof item.value === 'object' && !Array.isArray(item.value)) {
+            let nestedInst = null;
+            if (instance && typeof instance === 'object' && !item.isGetter) {
+                try { nestedInst = instance[key]; } catch {}
+            }
+            const hasLiveCtor = Boolean(nestedInst && typeof nestedInst === 'object' && nestedInst.constructor && nestedInst.constructor !== Object);
+            const liveClassName = hasLiveCtor ? (cc.js.getClassName(nestedInst.constructor) || nestedInst.constructor.name || '') : '';
+            const nestedType = liveClassName || item.actualType || item.type;
+            const nestedCtor = hasLiveCtor ? nestedInst.constructor : (nestedType ? cc.js.getClassByName(nestedType) : null);
+            if (hasLiveCtor && liveClassName && liveClassName !== 'Object') {
+                item.actualType = liveClassName;
+                item.__fromLiveInstance__ = true;
+            }
+            if (nestedCtor) {
+                _enrichDumpWithGetters(item, nestedCtor, hasLiveCtor ? nestedInst : null);
+            }
+        } else if (Array.isArray(item.value)) {
+            let arrInst = null;
+            if (instance && typeof instance === 'object' && !item.isGetter) {
+                try {
+                    if (Array.isArray(instance[key])) arrInst = instance[key];
+                } catch {}
+            }
+            for (let i = 0; i < item.value.length; i++) {
+                const elem = item.value[i];
                 if (elem && elem.value && typeof elem.value === 'object') {
-                    const elemType = elem.actualType || elem.type;
-                    const elemCtor = elemType ? cc.js.getClassByName(elemType) : null;
-                    if (elemCtor) {
-                        _enrichDumpWithGetters(elem, elemCtor);
+                    const elemInst = arrInst ? arrInst[i] : null;
+                    const hasLiveCtor = Boolean(elemInst && typeof elemInst === 'object' && elemInst.constructor && elemInst.constructor !== Object);
+                    const liveClassName = hasLiveCtor ? (cc.js.getClassName(elemInst.constructor) || elemInst.constructor.name || '') : '';
+                    const elemType = liveClassName || elem.actualType || elem.type;
+                    const elemCtor = hasLiveCtor ? elemInst.constructor : (elemType ? cc.js.getClassByName(elemType) : null);
+                    if (hasLiveCtor && liveClassName && liveClassName !== 'Object') {
+                        elem.actualType = liveClassName;
+                        elem.__fromLiveInstance__ = true;
                     }
+                    if (elemCtor) {
+                        _enrichDumpWithGetters(elem, elemCtor, hasLiveCtor ? elemInst : null);
+                    }
+                }
+            }
+            if (item.elementTypeData && item.elementTypeData.value && typeof item.elementTypeData.value === 'object') {
+                const elemDataType = item.elementTypeData.actualType || item.elementTypeData.type;
+                const elemDataCtor = elemDataType ? cc.js.getClassByName(elemDataType) : null;
+                if (elemDataCtor) {
+                    _enrichDumpWithGetters(item.elementTypeData, elemDataCtor, null);
                 }
             }
         }
@@ -919,6 +987,9 @@ function _serializeInstance(instance) {
             if (_isEditorProp(ctor, instance, k)) {
                 continue;
             }
+            if (gettersInfo[k]) {
+                continue;
+            }
             const publicPropName = k.slice(1);
             if (_isEditorProp(ctor, instance, publicPropName)) {
                 continue;
@@ -979,6 +1050,9 @@ function _extractInstanceAttrs(instance) {
 
 function _populateInstance(instance, values, prevValues = null, skipSetters = false) {
     if (!instance || !values || typeof values !== 'object') return;
+    const ctor = instance.constructor;
+    const declaredProps = (ctor && ctor !== Object && Array.isArray(ctor.__props__)) ? ctor.__props__ : null;
+
     // Sort keys so backing fields (e.g. _bundle) are populated before getter/setter properties (e.g. bundle)
     const keys = Object.keys(values).sort((a, b) => {
         const aIsUnder = a.startsWith('_');
@@ -990,6 +1064,13 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
 
     for (const k of keys) {
         if (k === '__type__' || k.startsWith('__') || BASE_ASSET_IGNORED_PROPS.has(k)) continue;
+        // Skip obsolete/removed properties that no longer exist on this @ccclass
+        if (declaredProps && !declaredProps.includes(k) && !(k in instance)) {
+            const isBackingForDeclared = k.startsWith('_') && declaredProps.includes(k.slice(1));
+            if (!isBackingForDeclared) {
+                continue;
+            }
+        }
         const val = values[k];
         try {
             const desc = _findPropertyDescriptor(instance, k);
@@ -1098,6 +1179,61 @@ function _populateInstance(instance, values, prevValues = null, skipSetters = fa
     }
 }
 
+function _isDummyAssetObject(v) {
+    return Boolean(v && typeof v === 'object' && !(typeof cc !== 'undefined' && cc.Object && v instanceof cc.Object) && (v._uuid || v.uuid));
+}
+
+function _stashDummyAssets(obj, prefix = [], out = [], visited = new WeakSet()) {
+    if (!obj || typeof obj !== 'object' || visited.has(obj)) return out;
+    visited.add(obj);
+    if (Array.isArray(obj)) {
+        for (let i = 0; i < obj.length; i++) {
+            const item = obj[i];
+            if (_isDummyAssetObject(item)) {
+                out.push({ owner: obj, key: i, path: [...prefix, i], item });
+                obj[i] = null;
+            } else if (item && typeof item === 'object' && !(typeof cc !== 'undefined' && cc.Object && item instanceof cc.Object)) {
+                _stashDummyAssets(item, [...prefix, i], out, visited);
+            }
+        }
+        return out;
+    }
+    for (const k of Object.keys(obj)) {
+        if (k.startsWith('__') || BASE_ASSET_IGNORED_PROPS.has(k)) continue;
+        const v = obj[k];
+        if (_isDummyAssetObject(v)) {
+            out.push({ owner: obj, key: k, path: [...prefix, k], item: v });
+            obj[k] = null;
+        } else if (v && typeof v === 'object' && !(typeof cc !== 'undefined' && cc.Object && v instanceof cc.Object)) {
+            _stashDummyAssets(v, [...prefix, k], out, visited);
+        }
+    }
+    return out;
+}
+
+function _restoreStashedAssets(dump, stashedAssets) {
+    if (!Array.isArray(stashedAssets)) return;
+    for (const entry of stashedAssets) {
+        try { entry.owner[entry.key] = entry.item; } catch {}
+        const u = entry.item._uuid || entry.item.uuid;
+        if (!dump || !dump.value) continue;
+        let cur = dump;
+        for (const seg of entry.path) {
+            if (!cur || cur.value === undefined || cur.value === null) {
+                cur = null;
+                break;
+            }
+            cur = cur.value[seg];
+        }
+        if (cur && typeof cur === 'object') {
+            cur.value = { uuid: u };
+            if (entry.item.__type__ && !cur.actualType) {
+                cur.actualType = entry.item.__type__;
+            }
+        }
+    }
+}
+
 function _getComponentDumpByName(className, currentValues) {
     const ctor = cc.js.getClassByName(className);
     if (!ctor) {
@@ -1135,45 +1271,14 @@ function _getComponentDumpByName(className, currentValues) {
         Object.setPrototypeOf(ctor.prototype, cc.Object.prototype);
     }
 
-    // Stash dummy asset objects ({ _uuid, uuid }) so cce.Dump.encode doesn't produce 'Unknown'
-    const stashedAssets = {};
-    for (const k of Object.keys(instance)) {
-        const v = instance[k];
-        if (v && typeof v === 'object' && !(v instanceof cc.Object) && (v._uuid || v.uuid)) {
-            stashedAssets[k] = v;
-            instance[k] = null;
-        } else if (Array.isArray(v)) {
-            for (let i = 0; i < v.length; i++) {
-                const item = v[i];
-                if (item && typeof item === 'object' && !(item instanceof cc.Object) && (item._uuid || item.uuid)) {
-                    stashedAssets[`${k}.${i}`] = item;
-                    v[i] = null;
-                }
-            }
-        }
-    }
+    // Stash dummy asset objects ({ _uuid, uuid }) recursively so cce.Dump.encode doesn't produce 'Unknown'
+    const stashedAssets = _stashDummyAssets(instance);
 
     try {
         const dump = cce.Dump.encode.encodeObject(instance, n, null, className, false);
 
         // Restore stashed dummy assets
-        for (const [pathStr, item] of Object.entries(stashedAssets)) {
-            if (pathStr.includes('.')) {
-                const [k, idxStr] = pathStr.split('.');
-                const idx = Number(idxStr);
-                if (instance[k]) instance[k][idx] = item;
-                const u = item._uuid || item.uuid;
-                if (dump && dump.value && dump.value[k] && Array.isArray(dump.value[k].value) && dump.value[k].value[idx]) {
-                    dump.value[k].value[idx].value = { uuid: u };
-                }
-            } else {
-                instance[pathStr] = item;
-                const u = item._uuid || item.uuid;
-                if (dump && dump.value && dump.value[pathStr]) {
-                    dump.value[pathStr].value = { uuid: u };
-                }
-            }
-        }
+        _restoreStashedAssets(dump, stashedAssets);
 
         if (dump && dump.value) {
             _applyInstanceAttrsToDump(instance, dump, className);
@@ -1183,7 +1288,7 @@ function _getComponentDumpByName(className, currentValues) {
 
             const gettersInfo = _getGettersOfClass(ctor);
             dump.__getters__ = gettersInfo;
-            _enrichDumpWithGetters(dump, ctor);
+            _enrichDumpWithGetters(dump, ctor, instance);
             dump.__editor_props__ = _getEditorPropsOfClass(ctor, instance);
         }
 
@@ -1415,45 +1520,14 @@ function _dumpLiveInstance(instance, className) {
 
     _ensureAllRealCurvesValid(instance, ctor);
 
-    // Stash dummy asset objects ({ _uuid, uuid }) so cce.Dump.encode doesn't produce 'Unknown'
-    const stashedAssets = {};
-    for (const k of Object.keys(instance)) {
-        const v = instance[k];
-        if (v && typeof v === 'object' && !(v instanceof cc.Object) && (v._uuid || v.uuid)) {
-            stashedAssets[k] = v;
-            instance[k] = null;
-        } else if (Array.isArray(v)) {
-            for (let i = 0; i < v.length; i++) {
-                const item = v[i];
-                if (item && typeof item === 'object' && !(item instanceof cc.Object) && (item._uuid || item.uuid)) {
-                    stashedAssets[`${k}.${i}`] = item;
-                    v[i] = null;
-                }
-            }
-        }
-    }
+    // Stash dummy asset objects ({ _uuid, uuid }) recursively so cce.Dump.encode doesn't produce 'Unknown'
+    const stashedAssets = _stashDummyAssets(instance);
 
     try {
         const dump = cce.Dump.encode.encodeObject(instance, n, null, typeName, false);
 
         // Restore stashed dummy assets
-        for (const [pathStr, item] of Object.entries(stashedAssets)) {
-            if (pathStr.includes('.')) {
-                const [k, idxStr] = pathStr.split('.');
-                const idx = Number(idxStr);
-                if (instance[k]) instance[k][idx] = item;
-                const u = item._uuid || item.uuid;
-                if (dump && dump.value && dump.value[k] && Array.isArray(dump.value[k].value) && dump.value[k].value[idx]) {
-                    dump.value[k].value[idx].value = { uuid: u };
-                }
-            } else {
-                instance[pathStr] = item;
-                const u = item._uuid || item.uuid;
-                if (dump && dump.value && dump.value[pathStr]) {
-                    dump.value[pathStr].value = { uuid: u };
-                }
-            }
-        }
+        _restoreStashedAssets(dump, stashedAssets);
 
         if (dump && dump.value) {
             _applyInstanceAttrsToDump(instance, dump, typeName);
@@ -1462,7 +1536,7 @@ function _dumpLiveInstance(instance, className) {
             _translateDump(dump.value, '');
             const gettersInfo = _getGettersOfClass(ctor);
             dump.__getters__ = gettersInfo;
-            _enrichDumpWithGetters(dump, ctor);
+            _enrichDumpWithGetters(dump, ctor, instance);
             dump.__editor_props__ = _getEditorPropsOfClass(ctor, instance);
         }
         return dump;
